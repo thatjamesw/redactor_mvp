@@ -1,0 +1,2 @@
+John Doe's email is john.doe@example.com. He lives in Helsinki and his IP address is 192.168.1.1.
+His API key is [REDACTED]. Credit card: [REDACTED]. UUID: 550e8400-e29b-41d4-a716-446655440000.

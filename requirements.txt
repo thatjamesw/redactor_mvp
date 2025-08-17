@@ -1,0 +1,9 @@
+flask
+pandas
+openpyxl
+faker
+spacy
+pyyaml
+python-stdnum
+phonenumbers
+ruamel.yaml
