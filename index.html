@@ -109,8 +109,8 @@
           </label>
           <label class="pill">
             <input id="b64-plain" type="checkbox" />
-            <span>Treat base64 as plaintext (non‑Secret)</span>
-            <div class="tt"><div class="i">i</div><div class="bubble">Attempt to decode base64 values in JSON/YAML that are not Kubernetes Secrets, process them, then re‑encode.</div></div>
+            <span>Treat base64 as plaintext (non-Secret)</span>
+            <div class="tt"><div class="i">i</div><div class="bubble">Attempt to decode base64 values in JSON/YAML that are not Kubernetes Secrets, process them, then re-encode.</div></div>
           </label>
           <label class="pill">
             <input id="debug" type="checkbox" />
@@ -284,6 +284,11 @@
     let lastPayload = null;
     let fileObj = null;
 
+    // NEW: track what was accepted so Full export can match exactly
+    let lastSelected = [];     // IDs ticked in Review
+    let lastPreview = '';      // exact preview text (for text exports)
+    let lastCSVBlob = '';      // exact redacted CSV from /redact (for CSV/TSV/XLSX)
+
     fileEl.addEventListener('change', () => { fileObj = fileEl.files[0] || null; });
 
     function mode() { return document.querySelector('input[name="mode"]:checked').value; }
@@ -308,11 +313,19 @@
       lastPayload = data;
       renderFindings(data);
       outputEl.textContent = 'Scan complete. Review and accept.';
+
+      // NEW: reset selection and blobs on a fresh scan
+      lastSelected = [];
+      lastPreview = '';
+      lastCSVBlob = '';
+      expLink.textContent = '';
     });
 
     $('#btn-accept').addEventListener('click', async () => {
       if (!lastPayload) { outputEl.textContent = 'Scan first.'; return; }
       const selected = $$('.chk').filter(x => x.checked).map(x => x.dataset.id);
+      lastSelected = selected; // NEW
+
       const fd = new FormData();
       if (fileObj) fd.append('file', fileObj);
       else fd.append('text_input', textEl.value);
@@ -325,8 +338,13 @@
       fd.append('strict_email', strictEmail.checked ? '1' : '0');
       if (debugEl.checked) fd.append('debug', '1');
       selected.forEach(id => fd.append('selected_ids', id));
+
       const data = await postForm('/redact', fd);
+
       outputEl.textContent = data.redacted || '';
+      lastPreview = data.redacted || '';     // NEW: remember exact preview
+      lastCSVBlob = data.redacted_csv || ''; // NEW: CSV/TSV/XLSX exact blob
+
       refreshExportState();
     });
 
@@ -344,6 +362,11 @@
       if (debugEl.checked) fd.append('debug', '1');
       const data = await postForm('/redact', fd);
       outputEl.textContent = data.redacted || '';
+
+      lastPreview = data.redacted || '';     // NEW
+      lastCSVBlob = data.redacted_csv || ''; // NEW
+      lastSelected = [];                      // NEW
+
       refreshExportState();
     });
 
@@ -375,6 +398,11 @@
       if (debugEl.checked) fdQuick.append('debug', '1');
       const red = await postForm('/redact', fdQuick);
       outputEl.textContent = red.redacted || '';
+
+      lastPreview = red.redacted || '';       // NEW
+      lastCSVBlob = red.redacted_csv || '';   // NEW
+      lastSelected = [];                      // NEW
+
       refreshExportState();
       document.querySelectorAll('.panel')[2]?.scrollIntoView({behavior:'smooth', block:'start'});
     });
@@ -383,7 +411,26 @@
       const fd = new FormData();
       if (fileObj) fd.append('file', fileObj);
       else fd.append('text_input', textEl.value);
-      if (expMode() === 'quick') fd.append('quick', '1');
+
+      const isQuick = (expMode() === 'quick');
+      if (isQuick) {
+        // Quick export: let the server rescan/quick-redact
+        fd.append('quick','1');
+      } else {
+        // Full export: export exactly what was accepted
+        if (!lastPayload) { expLink.textContent = 'Scan & Accept before Full export.'; return; }
+        fd.append('findings_json', JSON.stringify(lastPayload));
+        lastSelected.forEach(id => fd.append('selected_ids', id));
+
+        // Exact pass-through: prefer CSV blob for tables, else preview text
+        if (lastCSVBlob) {
+          fd.append('redacted_csv', lastCSVBlob);
+        } else if ((outputEl.textContent || '').trim()) {
+          fd.append('redacted_blob', outputEl.textContent);
+        }
+      }
+
+      // Common flags
       fd.append('mode', mode());
       fd.append('ip_mode', ipMode());
       fd.append('use_ner', useNER.checked ? '1' : '0');
@@ -391,6 +438,7 @@
       fd.append('b64_plain', b64Plain.checked ? '1' : '0');
       fd.append('strict_email', strictEmail.checked ? '1' : '0');
       if (debugEl.checked) fd.append('debug', '1');
+
       const data = await postForm('/export', fd);
       expLink.innerHTML = data.download ? `<a class="hint" href="${data.download}">Download redacted file</a>` : (data.error || 'Export failed');
     });
