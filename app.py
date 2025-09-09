@@ -16,21 +16,28 @@ EXPORT_DIR = Path(os.getenv("EXPORT_DIR", Path(app.root_path) / "exports"))
 EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 # =====================================================================
-# Helpers for stable table preview + selection-aligned export
+# Helpers (added for table-safe preview/export)
 # =====================================================================
 
 def _guess_sep(filename: str) -> str:
+    """Return the delimiter for CSV/TSV based on filename."""
     return "\t" if filename.lower().endswith(".tsv") else ","
 
 def _read_tabular(filename: str, raw: bytes) -> pd.DataFrame:
-    if filename.lower().endswith((".xlsx", ".xls")):
+    """Read CSV/TSV/XLSX into a DataFrame with strings (no NA coercion)."""
+    fname = filename.lower()
+    if fname.endswith((".xlsx", ".xls")):
         bio = io.BytesIO(raw)
-        return pd.read_excel(bio)
+        # For redact/preview we only work on the first sheet
+        return pd.read_excel(bio, dtype=str, keep_default_na=False)
     else:
         sep = _guess_sep(filename)
-        return pd.read_csv(io.BytesIO(raw), sep=sep)
+        from io import StringIO
+        text = raw.decode("utf-8", errors="ignore")
+        return pd.read_csv(StringIO(text), sep=sep, dtype=str, keep_default_na=False)
 
 def _preview_from_dataframe(df: pd.DataFrame, limit: int = 100) -> str:
+    """Stable line-by-line preview built from a redacted DataFrame."""
     lines = []
     n = min(len(df), limit)
     for i in range(n):
@@ -40,35 +47,60 @@ def _preview_from_dataframe(df: pd.DataFrame, limit: int = 100) -> str:
             lines.append(f"row {i+1}.{col}: {sval}")
     return "\n".join(lines)
 
-def _redact_cell_quick(txt: str, *, mode: str, ip_mode: str,
-                       use_ner: bool, intl_ids: bool, strict_email: bool) -> str:
-    if not isinstance(txt, str) or not txt:
-        return txt
-    res = scan_text(txt, include_low=False, use_ner=use_ner,
-                    intl_ids=intl_ids, strict_email=strict_email, debug=False)
-    sel = [f["id"] for f in res.get("findings", []) if f.get("confidence", 1.0) >= 0.80]
-    out = apply_replacements_from_findings(txt, res.get("findings", []),
-                                           selected_ids=sel, mode=mode, ip_mode=ip_mode)
-    # Harden EMAIL + IPv4
-    email_re = re.compile(r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b")
-    ip_re = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-    out = email_re.sub("[REDACTED]", out)
-    out = ip_re.sub("[REDACTED]", out)
+# -------- NEW: selection-by-text helpers (avoid span offsets on tables) --------
+
+def _build_selected_pairs(findings_payload: dict, selected_ids: list):
+    """Build (original, replacement) pairs from the selected findings."""
+    pairs = []
+    if not findings_payload:
+        return pairs
+    sel = set(selected_ids or [])
+    for f in findings_payload.get("findings", []):
+        if f.get("id") in sel:
+            orig = f.get("original")
+            repl = f.get("replacement") or "[REDACTED]"
+            if isinstance(orig, str) and orig and orig != repl:
+                pairs.append((orig, repl))
+    # Longest originals first to minimise partial-overlap cascades
+    pairs.sort(key=lambda t: len(t[0]), reverse=True)
+    # De-dupe by original, keep the first (longest) replacement
+    seen = set()
+    out = []
+    for o, r in pairs:
+        if o not in seen:
+            seen.add(o)
+            out.append((o, r))
     return out
 
-def _df_quick_redact(df: pd.DataFrame, *, mode: str, ip_mode: str,
-                     use_ner: bool, intl_ids: bool, strict_email: bool) -> pd.DataFrame:
-    def f(x):
-        return _redact_cell_quick(x, mode=mode, ip_mode=ip_mode,
-                                  use_ner=use_ner, intl_ids=intl_ids, strict_email=strict_email) \
-               if isinstance(x, str) else x
-    return df.applymap(f)
+def _apply_pairs_to_text(s: str, pairs: list):
+    """Apply (original -> replacement) pairs via literal substitution."""
+    if not isinstance(s, str) or not s:
+        return s
+    for orig, repl in pairs:
+        s = s.replace(orig, repl)
+    return s
 
-def _apply_selected_to_text(original_text: str, findings_payload: dict,
-                            selected_ids: list, *, mode: str, ip_mode: str) -> str:
-    findings = findings_payload.get("findings", [])
-    return apply_replacements_from_findings(original_text, findings,
-                                            selected_ids=selected_ids, mode=mode, ip_mode=ip_mode)
+def _df_apply_selected_by_text(df: pd.DataFrame, findings_payload: dict, selected_ids: list) -> pd.DataFrame:
+    """Apply selected findings to each cell by exact text match (no spans)."""
+    pairs = _build_selected_pairs(findings_payload, selected_ids)
+    if not pairs:
+        return df.copy()
+    return df.applymap(lambda v: _apply_pairs_to_text("" if pd.isna(v) else str(v), pairs))
+
+# ---- NEW: pragmatic name-column fallback (redact mode only) ----
+NAME_COL_RE = re.compile(r'^(?:full[-_\s]?name|name)$', re.IGNORECASE)
+
+def _force_name_redaction(df: pd.DataFrame, mode: str) -> pd.DataFrame:
+    """If a column is clearly a personal name column, force redact its cells in redact mode."""
+    if mode != "redact":
+        return df
+    name_cols = [c for c in df.columns if NAME_COL_RE.match(str(c).strip())]
+    if not name_cols:
+        return df
+    df2 = df.copy()
+    for c in name_cols:
+        df2[c] = df2[c].apply(lambda v: "[REDACTED]" if isinstance(v, str) and v.strip() else v)
+    return df2
 
 # ---------- Routes ----------
 
@@ -89,7 +121,9 @@ def route_scan():
     strict_email = request.form.get("strict_email") == "1"
     b64_plain = request.form.get("b64_plain") == "1"
     debug = request.form.get("debug") == "1"
-    include_low = request.form.get("include_low") == "1"
+
+    # Always include low-confidence to surface borderline PERSON hits for selection.
+    include_low = True
 
     text, meta = _get_text_or_canonical_text(request, b64_plain=b64_plain)
     if text is None:
@@ -120,7 +154,7 @@ def route_redact():
     b64_plain = request.form.get("b64_plain") == "1"
     debug = request.form.get("debug") == "1"
 
-    # --- Table-first handling (avoid mangling canonical lines) ---
+    # ---------- Table-first handling to avoid CSV tokenisation errors ----------
     uploaded = request.files.get("file")
     filename = uploaded.filename if uploaded and uploaded.filename else None
     if filename and filename.lower().endswith((".csv", ".tsv", ".xlsx", ".xls")):
@@ -136,24 +170,29 @@ def route_redact():
             except Exception:
                 findings_payload = None
 
-        if findings_payload and not quick:
-            # Apply exact selection to the CSV blob, then parse back and preview from DataFrame
-            sep = _guess_sep(filename)
-            orig_csv = df.to_csv(index=False, sep=sep)
-            red_csv = _apply_selected_to_text(orig_csv, findings_payload, selected_ids, mode=mode, ip_mode=ip_mode)
-            df_red = pd.read_csv(io.StringIO(red_csv), sep=sep)
+        if findings_payload and not quick and selected_ids:
+            # Apply the user's exact selections per-cell by literal pairs
+            df_red = _df_apply_selected_by_text(df, findings_payload, selected_ids)
         else:
-            # Quick path: hi-confidence + harden EMAIL/IP
-            df_red = _df_quick_redact(df, mode=mode, ip_mode=ip_mode,
-                                      use_ner=use_ner, intl_ids=intl_ids, strict_email=strict_email)
+            # Quick or no payload: per-cell quick pass using _redact_cell
+            def cell(v):
+                return _redact_cell(
+                    str(v), quick=True, mode=mode, ip_mode=ip_mode, use_ner=use_ner,
+                    intl_ids=intl_ids, strict_email=strict_email, debug=debug, b64_plain=b64_plain
+                ) if isinstance(v, str) else v
+            df_red = df.applymap(cell)
 
+        # NEW: ensure personal name columns are fully redacted in redact mode
+        df_red = _force_name_redaction(df_red, mode)
+
+        # Build preview and an exact CSV/TSV blob for export to use 1:1
         preview = _preview_from_dataframe(df_red, limit=100)
-        # Also return a CSV string of the redacted table so Export can write it 1:1
         sep = _guess_sep(filename)
         red_csv = df_red.to_csv(index=False, sep=sep)
+
         return jsonify({"redacted": preview, "redacted_csv": red_csv})
 
-    # --- Fallback to original text/canonical flow ---
+    # ---------- Fallback to original text/canonical flow ----------
     text = request.form.get("text_input")
     meta = {"source": "text"}
     if not text:
@@ -232,7 +271,7 @@ def route_export():
     selected_ids = request.form.getlist("selected_ids")
     findings_payload = json.loads(findings_json) if findings_json else None
 
-    # Pass-through of exact redacted CSV produced by /redact (for tables)
+    # Optional exact preview/CSV passthrough; guarantees preview == export
     red_blob = request.form.get("redacted_csv") or request.form.get("redacted_blob")
 
     ts = int(time.time())
@@ -266,31 +305,58 @@ def route_export():
                 yaml.safe_dump_all(red_docs, f, sort_keys=False)
 
         elif ext in ("xlsx", "xls"):
-            df = _read_tabular(filename, raw)
             if red_blob:
                 df_red = pd.read_csv(io.StringIO(red_blob))
-            elif findings_payload and not quick:
-                orig_csv = df.to_csv(index=False)
-                red_csv = _apply_selected_to_text(orig_csv, findings_payload, selected_ids, mode=mode, ip_mode=ip_mode)
-                df_red = pd.read_csv(io.StringIO(red_csv))
+                df_red = _force_name_redaction(df_red, mode)
+                with pd.ExcelWriter(outpath, engine="openpyxl") as writer:
+                    df_red.to_excel(writer, index=False)
+            elif findings_payload and not quick and selected_ids:
+                bio = io.BytesIO(raw)
+                xl = pd.ExcelFile(bio)
+                with pd.ExcelWriter(outpath, engine="openpyxl") as writer:
+                    for sheet in xl.sheet_names:
+                        df = xl.parse(sheet_name=sheet, dtype=str, keep_default_na=False)
+                        df_red = _df_apply_selected_by_text(df, findings_payload, selected_ids)
+                        df_red = _force_name_redaction(df_red, mode)
+                        df_red.to_excel(writer, index=False, sheet_name=sheet)
             else:
-                df_red = _df_quick_redact(df, mode=mode, ip_mode=ip_mode,
-                                          use_ner=use_ner, intl_ids=intl_ids, strict_email=strict_email)
-            with pd.ExcelWriter(outpath, engine="openpyxl") as writer:
-                df_red.to_excel(writer, index=False)
+                bio = io.BytesIO(raw)
+                xl = pd.ExcelFile(bio)
+                with pd.ExcelWriter(outpath, engine="openpyxl") as writer:
+                    for sheet in xl.sheet_names:
+                        df = xl.parse(sheet_name=sheet, dtype=str, keep_default_na=False)
+                        for c in df.columns:
+                            df[c] = df[c].apply(
+                                lambda v: _redact_cell(
+                                    str(v), quick=True, mode=mode, ip_mode=ip_mode, use_ner=use_ner,
+                                    intl_ids=intl_ids, strict_email=strict_email, debug=debug, b64_plain=b64_plain
+                                )
+                            )
+                        df = _force_name_redaction(df, mode)
+                        df.to_excel(writer, index=False, sheet_name=sheet)
 
         elif ext in ("csv", "tsv"):
-            df = _read_tabular(filename, raw)
             sep = _guess_sep(filename)
             if red_blob:
-                outpath.write_text(red_blob, encoding="utf-8")
-            elif findings_payload and not quick:
-                orig_csv = df.to_csv(index=False, sep=sep)
-                red_csv = _apply_selected_to_text(orig_csv, findings_payload, selected_ids, mode=mode, ip_mode=ip_mode)
-                outpath.write_text(red_csv, encoding="utf-8")
+                # When we got the preview blob, ensure name-column fallback is also honoured
+                df_red = pd.read_csv(io.StringIO(red_blob), sep=sep, dtype=str, keep_default_na=False)
+                df_red = _force_name_redaction(df_red, mode)
+                df_red.to_csv(outpath, index=False, sep=sep)
             else:
-                df_red = _df_quick_redact(df, mode=mode, ip_mode=ip_mode,
-                                          use_ner=use_ner, intl_ids=intl_ids, strict_email=strict_email)
+                df = _read_tabular(filename, raw)
+                if findings_payload and not quick and selected_ids:
+                    df_red = _df_apply_selected_by_text(df, findings_payload, selected_ids)
+                else:
+                    # quick/hardened per-cell path
+                    for c in df.columns:
+                        df[c] = df[c].apply(
+                            lambda v: _redact_cell(
+                                str(v), quick=True, mode=mode, ip_mode=ip_mode, use_ner=use_ner,
+                                intl_ids=intl_ids, strict_email=strict_email, debug=debug, b64_plain=b64_plain
+                            )
+                        )
+                    df_red = df
+                df_red = _force_name_redaction(df_red, mode)
                 df_red.to_csv(outpath, index=False, sep=sep)
 
         else:
@@ -299,7 +365,10 @@ def route_export():
             if red_blob:
                 redacted_text = red_blob
             elif findings_payload and not quick:
-                redacted_text = _apply_selected_to_text(text, findings_payload, selected_ids, mode=mode, ip_mode=ip_mode)
+                redacted_text = apply_replacements_from_findings(
+                    text, findings_payload.get("findings", []),
+                    selected_ids=selected_ids, mode=mode, ip_mode=ip_mode
+                )
             else:
                 res = scan_text(
                     text, include_low=not quick, use_ner=use_ner,
@@ -325,7 +394,10 @@ def route_export():
         if red_blob:
             redacted_text = red_blob
         elif findings_payload and not quick:
-            redacted_text = _apply_selected_to_text(text, findings_payload, selected_ids, mode=mode, ip_mode=ip_mode)
+            redacted_text = apply_replacements_from_findings(
+                text, findings_payload.get("findings", []),
+                selected_ids=selected_ids, mode=mode, ip_mode=ip_mode
+            )
         else:
             res = scan_text(
                 text, include_low=not quick, use_ner=use_ner,
