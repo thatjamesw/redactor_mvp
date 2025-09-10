@@ -7,3 +7,8 @@ pyyaml
 python-stdnum
 phonenumbers
 ruamel.yaml
+python-docx
+pymupdf
+pytesseract
+Pillow
+opencv-python

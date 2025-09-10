@@ -47,6 +47,11 @@ patterns:
     base: 0.62
     regex: \b[A-Za-z0-9_\-]{24,}\b
 
+  # Passport MRZ (TD3/TD1) candidate lines
+  - label: PASSPORT_MRZ
+    base: 0.85
+    regex: (?m)^(?:P<|[A-Z0-9<]{30,44})$
+
   # IBAN (validated in code if python-stdnum is installed)
   - label: INTL_IBAN_CAND
     base: 0.50

@@ -6,21 +6,21 @@
   <title>Redactor — Scan • Review • Accept</title>
   <style>
     :root{
-      --bg:#0a0f18;
-      --panel:#0e1521;
-      --panel-2:#0b111a;
-      --muted:#a9b7cc;
-      --text:#e6ecf2;
-      --sub:#c8d1dc;
-      --border:#1a2330;
-      --blue:#2156c6;
-      --blue-2:#1a4fb3;
-      --chip:#0f1724;
-      --chip-border:#223145;
-      --shadow:0 10px 30px rgba(0,0,0,.35);
-      --good:#12301e;
-      --goodtxt:#b7f5b9;
-      --med:#232837;
+      --bg:#101112;
+      --panel:#141414;
+      --panel-2:#161616;
+      --muted:#a3a3a3;
+      --text:#f5f5f5;
+      --sub:#e5e5e5;
+      --border:#262626;
+      --blue:#6b7280; /* neutral gray accent */
+      --blue-2:#4b5563; /* neutral darker gray */
+      --chip:#141414;
+      --chip-border:#3f3f46;
+      --shadow:0 10px 30px rgba(0,0,0,.25);
+      --good:#1a2e1d;
+      --goodtxt:#cfeccc;
+      --med:#2b2b2b;
     }
     *{box-sizing:border-box}
     html,body{height:100%}
@@ -36,10 +36,10 @@
     .muted{color:var(--muted)}
     .stack{display:grid;gap:12px}
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    textarea{width:100%;min-height:180px;background:#0f131a;color:var(--text);border:1px solid var(--border);border-radius:12px;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    textarea{width:100%;min-height:180px;background:#111111;color:var(--text);border:1px solid var(--border);border-radius:12px;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
     .btn{appearance:none;border:0;border-radius:10px;padding:10px 14px;background:var(--blue);color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:8px;height:36px}
     .btn.sec{background:#343a46}
-    .btn.ghost{background:transparent;border:1px solid var(--blue);color:#cfe2ff}
+    .btn.ghost{background:transparent;border:1px solid var(--blue);color:#e5e7eb}
     .btn:disabled{opacity:.55;cursor:not-allowed}
     .seg{display:inline-flex;align-items:stretch;border:1px solid var(--chip-border);border-radius:10px;overflow:hidden;background:rgba(255,255,255,.03)}
     .seg label{display:inline-flex;align-items:center;position:relative}
@@ -55,12 +55,12 @@
     .lab-med{background:var(--med);color:#eaeef6}
     .prev{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#cbd5e1;font-size:12px;white-space:pre-wrap}
     .hint{font-size:12px;color:var(--muted)}
-    .out{white-space:pre-wrap;background:#081018;border:1px solid var(--border);padding:12px;border-radius:12px;min-height:160px}
+    .out{white-space:pre-wrap;background:#121212;border:1px solid var(--border);padding:12px;border-radius:12px;min-height:160px}
     .grid2{display:grid;grid-template-columns:repeat(auto-fit, minmax(260px,1fr));gap:10px}
     .hidden{display:none}
     .tt{position:relative;display:inline-flex;align-items:center;gap:6px}
     .tt .i{width:16px;height:16px;border-radius:50%;border:1px solid var(--chip-border);display:inline-flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);cursor:help;background:var(--chip)}
-    .tt .bubble{position:absolute;bottom:125%;left:0;transform:translateY(-6px);min-width:220px;max-width:340px;background:#0e1420;border:1px solid var(--chip-border);padding:10px 12px;border-radius:10px;color:#cfe2ff;line-height:1.35;box-shadow:var(--shadow);display:none;z-index:50}
+    .tt .bubble{position:absolute;bottom:125%;left:0;transform:translateY(-6px);min-width:220px;max-width:340px;background:#151515;border:1px solid var(--chip-border);padding:10px 12px;border-radius:10px;color:#e5e7eb;line-height:1.35;box-shadow:var(--shadow);display:none;z-index:50}
     .tt:hover .bubble{display:block}
     .tt .bubble::after{content:"";position:absolute;top:100%;left:10px;border:6px solid transparent;border-top-color:#0e1420}
 
@@ -68,7 +68,7 @@
     .accordion{display:grid;gap:8px}
     .acc-item{border:1px solid var(--border);border-radius:12px;background:var(--panel-2)}
     .acc-head{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer}
-    .acc-head:hover{background:#0f1622}
+    .acc-head:hover{background:#1f1f1f}
     .acc-title{font-weight:600}
     .acc-counts{margin-left:auto;color:var(--muted);font-size:12px}
     .acc-body{padding:10px 12px;display:none}
@@ -90,16 +90,27 @@
     <section class="panel">
       <div class="head"><strong>1. Scan</strong></div>
       <div class="body stack">
-        <div class="stack">
-          <div class="row">
-            <label class="muted">Paste text or choose a file</label>
-            <div class="tt">
-              <div class="i">i</div>
-              <div class="bubble">Paste any text, or upload CSV/TSV/XLSX/JSON/YAML. Structure is preserved on export (YAML multi-doc and Kubernetes Secret-aware).</div>
+        <div class="grid2">
+          <div class="stack">
+            <div class="muted">Input type</div>
+            <div class="seg">
+              <label><input type="radio" name="input_type" value="text" checked /><span>Text</span></label>
+              <label><input type="radio" name="input_type" value="image" /><span>Image</span></label>
+              <label><input type="radio" name="input_type" value="document" /><span>Document</span></label>
             </div>
           </div>
-          <textarea id="text"></textarea>
-          <div><input id="file" type="file" /></div>
+        </div>
+
+        <div class="stack">
+          <div class="row">
+            <label id="scan-hint" class="muted">Paste text or choose a file</label>
+            <div class="tt">
+              <div class="i">i</div>
+              <div id="scan-tip" class="bubble">Paste any text, or upload CSV/TSV/XLSX/JSON/YAML. Structure is preserved on export (YAML multi-doc and Kubernetes Secret-aware).</div>
+            </div>
+          </div>
+          <div id="text-wrap"><textarea id="text"></textarea></div>
+          <div id="file-wrap"><input id="file" type="file" /></div>
         </div>
 
         <div class="grid2">
@@ -112,6 +123,11 @@
             <input id="intl-ids" type="checkbox" />
             <span>International IDs (IBAN/BIC/VAT)</span>
             <div class="tt"><div class="i">i</div><div class="bubble">Validates and redacts IBAN/BIC/VAT via python-stdnum (if installed).</div></div>
+          </label>
+          <label class="pill">
+            <input id="ignore-headers" type="checkbox" />
+            <span>Ignore first line (headers)</span>
+            <div class="tt"><div class="i">i</div><div class="bubble">When pasting plain text tables/CSV, ignore the first line to avoid redacting column headers.</div></div>
           </label>
           <label class="pill">
             <input id="strict-email" type="checkbox" checked />
@@ -144,6 +160,7 @@
       <div class="body stack">
         <div class="row" style="align-items:center; gap:12px;">
           <div id="stats" class="hint">No findings yet.</div>
+          <span id="image-mode" class="badge" style="display:none;margin-left:8px;">Image mode: text findings disabled</span>
           <span id="auto-chip" class="badge" style="display:none;margin-left:8px;">Auto-selected: 0</span>
 
           <div style="margin-left:auto"></div>
@@ -218,6 +235,8 @@
               <label><input type="radio" name="exp_mode" value="quick" checked /><span>Quick</span></label>
               <label><input type="radio" name="exp_mode" value="full" /><span>Full</span></label>
             </div>
+            <label class="pill" id="opt-faces" style="display:none;"><input id="chk-faces" type="checkbox" checked /><span>Redact faces</span></label>
+            <label class="pill" id="opt-mrz" style="display:none;"><input id="chk-mrz" type="checkbox" checked /><span>Redact MRZ strip</span></label>
             <button id="btn-export" class="btn ghost" disabled>Export file</button>
             <span id="exp-link" class="hint"></span>
           </div>
@@ -270,8 +289,10 @@
 
     const textEl = $('#text');
     const fileEl = $('#file');
+    const inputTypeEls = $$('input[name="input_type"]');
     const useNER = $('#use-ner');
     const intlIDs = $('#intl-ids');
+    const ignoreHeaders = $('#ignore-headers');
     const strictEmail = $('#strict-email');
     const b64Plain = $('#b64-plain');
     const debugEl = $('#debug');
@@ -327,6 +348,89 @@
     let lastCSVBlob = '';
 
     fileEl.addEventListener('change', () => { fileObj = fileEl.files[0] || null; });
+    function isImageFile(name){
+      if (!name) return false;
+      const n = name.toLowerCase();
+      return n.endsWith('.jpg') || n.endsWith('.jpeg') || n.endsWith('.png') || n.endsWith('.tif') || n.endsWith('.tiff');
+    }
+    fileEl.addEventListener('change', () => {
+      const banner = document.getElementById('image-mode');
+      const optFaces = document.getElementById('opt-faces');
+      const optMrz = document.getElementById('opt-mrz');
+      const isImg = isImageFile(fileEl.value || (fileEl.files[0]?.name || ''));
+      banner.style.display = isImg ? 'inline-flex' : 'none';
+      optFaces.style.display = isImg ? 'inline-flex' : 'none';
+      optMrz.style.display = isImg ? 'inline-flex' : 'none';
+    });
+
+    // If a .txt file is selected, append its contents to the textarea and clear the file selection
+    function isAppendableToText(name){
+      const n = (name || '').toLowerCase();
+      return n.endsWith('.txt');
+    }
+    fileEl.addEventListener('change', () => {
+      const f = fileEl.files && fileEl.files[0];
+      if (!f) return;
+      if (isAppendableToText(f.name)){
+        const reader = new FileReader();
+        reader.onload = () => {
+          const cur = textEl.value || '';
+          const add = reader.result || '';
+          textEl.value = cur ? (cur + '\n' + add) : add;
+          // Clear file so subsequent actions use the textarea as input
+          fileEl.value = '';
+          fileObj = null;
+          refreshExportState();
+        };
+        try { reader.readAsText(f); } catch (e) {}
+      }
+    });
+
+    function inputType(){
+      const el = document.querySelector('input[name="input_type"]:checked');
+      return el ? el.value : 'text';
+    }
+
+    function configureInputUI(){
+      const t = inputType();
+      const textWrap = document.getElementById('text-wrap');
+      const fileWrap = document.getElementById('file-wrap');
+      const hint = document.getElementById('scan-hint');
+      const tip = document.getElementById('scan-tip');
+
+      // Defaults
+      let accept = '';
+      if (t === 'text'){
+        textWrap.classList.remove('hidden');
+        fileWrap.classList.remove('hidden');
+        hint.textContent = 'Paste text or choose a text/structured file';
+        tip.textContent = 'Paste any text, or upload CSV/TSV/XLSX/JSON/YAML/TXT. Structure is preserved on export.';
+        accept = '.txt,.csv,.tsv,.json,.yaml,.yml,.xlsx,.xls';
+      } else if (t === 'image'){
+        textWrap.classList.add('hidden');
+        fileWrap.classList.remove('hidden');
+        hint.textContent = 'Choose an image (JPG/PNG/TIFF)';
+        tip.textContent = 'Images are OCR\'d locally. Optional face and MRZ redaction available during Export.';
+        accept = 'image/*';
+      } else {
+        textWrap.classList.add('hidden');
+        fileWrap.classList.remove('hidden');
+        hint.textContent = 'Choose a document (PDF/DOCX/MBOX/ZIP)';
+        tip.textContent = 'We extract text safely from documents like PDF, DOCX, MBOX, or ZIP archives.';
+        accept = '.pdf,.docx,.mbox,.zip';
+      }
+      fileEl.value = '';
+      fileObj = null;
+      fileEl.setAttribute('accept', accept);
+
+      // Refresh any image-only UI toggles
+      const ev = new Event('change');
+      fileEl.dispatchEvent(ev);
+      refreshExportState();
+    }
+
+    inputTypeEls.forEach(el => el.addEventListener('change', configureInputUI));
+    configureInputUI();
 
     function mode() { return document.querySelector('input[name="mode"]:checked').value; }
     function ipMode() { return document.querySelector('input[name="ip_mode"]:checked').value; }
@@ -409,7 +513,7 @@
       if (ctxTypes && !chartTypes) {
         chartTypes = new Chart(ctxTypes, {
           type: 'bar',
-          data: { labels: [], datasets: [{ label: 'Findings', data: [], backgroundColor: '#1d4ed8' }] },
+          data: { labels: [], datasets: [{ label: 'Findings', data: [], backgroundColor: '#6b7280' }] },
           options: {
             responsive:true,
             plugins:{ legend:{ labels:{ color:'#cfe2ff' } } },
@@ -543,6 +647,7 @@
       else fd.append('text_input', textEl.value);
       fd.append('use_ner', useNER.checked ? '1' : '0');
       fd.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fd.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
       fd.append('b64_plain', b64Plain.checked ? '1' : '0');
       fd.append('strict_email', strictEmail.checked ? '1' : '0');
       if (debugEl.checked) fd.append('debug', '1');
@@ -571,6 +676,7 @@
       fd.append('ip_mode', ipMode());
       fd.append('use_ner', useNER.checked ? '1' : '0');
       fd.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fd.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
       fd.append('b64_plain', b64Plain.checked ? '1' : '0');
       fd.append('strict_email', strictEmail.checked ? '1' : '0');
       if (debugEl.checked) fd.append('debug', '1');
@@ -594,6 +700,7 @@
       fd.append('ip_mode', ipMode());
       fd.append('use_ner', useNER.checked ? '1' : '0');
       fd.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fd.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
       fd.append('b64_plain', b64Plain.checked ? '1' : '0');
       fd.append('strict_email', strictEmail.checked ? '1' : '0');
       if (debugEl.checked) fd.append('debug', '1');
@@ -614,6 +721,7 @@
       else fdScan.append('text_input', textEl.value);
       fdScan.append('use_ner', useNER.checked ? '1' : '0');
       fdScan.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fdScan.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
       fdScan.append('b64_plain', b64Plain.checked ? '1' : '0');
       fdScan.append('strict_email', strictEmail.checked ? '1' : '0');
       if (debugEl.checked) fdScan.append('debug', '1');
@@ -630,6 +738,7 @@
       fdQuick.append('ip_mode', ipMode());
       fdQuick.append('use_ner', useNER.checked ? '1' : '0');
       fdQuick.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fdQuick.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
       fdQuick.append('b64_plain', b64Plain.checked ? '1' : '0');
       fdQuick.append('strict_email', strictEmail.checked ? '1' : '0');
       if (debugEl.checked) fdQuick.append('debug', '1');
@@ -668,9 +777,18 @@
       fd.append('ip_mode', ipMode());
       fd.append('use_ner', useNER.checked ? '1' : '0');
       fd.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fd.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
       fd.append('b64_plain', b64Plain.checked ? '1' : '0');
       fd.append('strict_email', strictEmail.checked ? '1' : '0');
       if (debugEl.checked) fd.append('debug', '1');
+      // Image options
+      const isImg = fileObj && /\.(jpg|jpeg|png|tif|tiff)$/i.test(fileObj.name);
+      if (isImg) {
+        const chkFaces = document.getElementById('chk-faces');
+        const chkMrz = document.getElementById('chk-mrz');
+        fd.append('redact_faces', chkFaces && chkFaces.checked ? '1' : '0');
+        fd.append('redact_mrz', chkMrz && chkMrz.checked ? '1' : '0');
+      }
 
       const data = await postForm('/export', fd);
       expLink.innerHTML = data.download ? `<a class="hint" href="${data.download}">Download redacted file</a>` : (data.error || 'Export failed');
@@ -689,9 +807,12 @@
     }
 
     function refreshExportState() {
-      const hasOutput = (outputEl.textContent || '').trim().length > 0;
       const btn = document.getElementById('btn-export');
-      if (btn) btn.disabled = !hasOutput;
+      if (!btn) return;
+      const hasOutput = (outputEl.textContent || '').trim().length > 0;
+      const isImg = fileObj && /\.(jpg|jpeg|png|tif|tiff)$/i.test(fileObj.name || '');
+      // For images, enable export even without text preview
+      btn.disabled = isImg ? false : !hasOutput;
     }
     refreshExportState();
   </script>

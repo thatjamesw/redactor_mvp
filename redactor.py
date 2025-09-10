@@ -524,7 +524,7 @@ def _pseudonymise_value(label: str, original: str, ip_mode: str = "rfc5737") -> 
     if label == "PERSON":
         return "Person_" + _stable_token(label, original, 8)
     if label in ("API_KEY","GENERIC_TOKEN","DERIVED_KEY","PotentialSecret","AWS_SECRET_KEY"):
-        return "sk-" + _stable_token(label, original, 28)
+        return "redact-" + _stable_token(label, original, 28)
     if label == "CREDIT_CARD":
         try:
             num = fk.credit_card_number()
@@ -532,7 +532,7 @@ def _pseudonymise_value(label: str, original: str, ip_mode: str = "rfc5737") -> 
             num = "4111111111111111"
         return _format_cc(num)
     if label == "API_KEY" or label in ("GENERIC_TOKEN","DERIVED_KEY","PotentialSecret"):
-        return "sk-" + _rand_base62(28)
+        return "redact-" + _rand_base62(28)
     if label == "PERSON":
         return fk.name()
     if label == "IPV4_CIDR":

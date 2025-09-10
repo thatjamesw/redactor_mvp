@@ -47,6 +47,41 @@ def _preview_from_dataframe(df: pd.DataFrame, limit: int = 100) -> str:
             lines.append(f"row {i+1}.{col}: {sval}")
     return "\n".join(lines)
 
+# -------- OCR cleanup helpers --------
+
+def _clean_ocr_text(raw_text: str) -> str:
+    """Heuristically clean OCR text to reduce gibberish lines.
+
+    - Normalize whitespace
+    - Remove control chars
+    - Drop lines with too few letters or too many non-alnum symbols
+    - Limit repeated punctuation
+    """
+    if not isinstance(raw_text, str):
+        return ""
+    text = raw_text.replace("\r", "\n")
+    lines = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        # Remove control characters
+        s = ''.join(ch for ch in s if (32 <= ord(ch) <= 126) or ch in "\t ")
+        s = s.strip()
+        if not s:
+            continue
+        alpha = sum(c.isalpha() for c in s)
+        total = len(s)
+        if alpha < 2:
+            continue
+        non_alnum = sum(not c.isalnum() and c not in " -_.,:/@()'\"#&+" for c in s)
+        if total and non_alnum / total > 0.5:
+            continue
+        # Collapse long runs of punctuation
+        s = re.sub(r"([\-_.,:/])\1{3,}", r"\1\1\1", s)
+        lines.append(s)
+    return "\n".join(lines)
+
 # -------- NEW: selection-by-text helpers (avoid span offsets on tables) --------
 
 def _compute_replacement_for_finding(f: dict, mode: str, ip_mode: str) -> str:
@@ -129,6 +164,20 @@ def _force_name_redaction(df: pd.DataFrame, mode: str) -> pd.DataFrame:
         df2[c] = df2[c].apply(lambda v: "[REDACTED]" if isinstance(v, str) and v.strip() else v)
     return df2
 
+# Pragmatic location-column fallback (redact mode only)
+LOCATION_COL_RE = re.compile(r'^(?:city|town|location|country|region)$', re.IGNORECASE)
+
+def _force_location_redaction(df: pd.DataFrame, mode: str) -> pd.DataFrame:
+    if mode != "redact":
+        return df
+    loc_cols = [c for c in df.columns if LOCATION_COL_RE.match(str(c).strip())]
+    if not loc_cols:
+        return df
+    df2 = df.copy()
+    for c in loc_cols:
+        df2[c] = df2[c].apply(lambda v: "[REDACTED]" if isinstance(v, str) and v.strip() else v)
+    return df2
+
 # ---------- Routes ----------
 
 @app.get("/")
@@ -148,17 +197,30 @@ def route_scan():
     strict_email = request.form.get("strict_email") == "1"
     b64_plain = request.form.get("b64_plain") == "1"
     debug = request.form.get("debug") == "1"
+    ignore_headers = request.form.get("ignore_headers") == "1"
 
-    # Always include low-confidence to surface borderline PERSON hits for selection.
+    # Include low-confidence by default, but disable for noisy OCR sources
     include_low = True
 
     text, meta = _get_text_or_canonical_text(request, b64_plain=b64_plain)
     if text is None:
         return jsonify({"error": "No input provided"}), 400
 
+    # Heuristic: for OCR/image/pdf sources with very short text, suppress low-confidence; otherwise allow
+    src = meta.get("source")
+    text_len = len(text or "")
+    if src in ("image", "pdf") and text_len < 50:
+        eff_include_low = False
+    else:
+        eff_include_low = include_low
+
+    # If pasting plain text and user asked to ignore headers, drop first line
+    if meta.get("source") == "text" and ignore_headers and "\n" in text:
+        text = text.split("\n", 1)[1]
+
     result = scan_text(
         text,
-        include_low=include_low,
+        include_low=eff_include_low,
         use_ner=use_ner,
         intl_ids=intl_ids,
         strict_email=strict_email,
@@ -180,6 +242,7 @@ def route_redact():
     strict_email = request.form.get("strict_email") == "1"
     b64_plain = request.form.get("b64_plain") == "1"
     debug = request.form.get("debug") == "1"
+    ignore_headers = request.form.get("ignore_headers") == "1"
 
     # ---------- Table-first handling to avoid CSV tokenisation errors ----------
     uploaded = request.files.get("file")
@@ -209,8 +272,9 @@ def route_redact():
                 ) if isinstance(v, str) else v
             df_red = df.applymap(cell)
 
-        # NEW: ensure personal name columns are fully redacted in redact mode
+        # Ensure personal name/location columns are fully redacted in redact mode
         df_red = _force_name_redaction(df_red, mode)
+        df_red = _force_location_redaction(df_red, mode)
 
         # Build preview and an exact CSV/TSV blob for export to use 1:1
         preview = _preview_from_dataframe(df_red, limit=100)
@@ -304,13 +368,15 @@ def route_export():
     ts = int(time.time())
     if filename:
         ext = filename.lower().rsplit(".", 1)[-1]
-        outname = f"redacted_{ts}.{ext if ext in ('json','csv','tsv','xlsx','xls','yaml','yml') else 'txt'}"
+        allowed = ('json','csv','tsv','xlsx','xls','yaml','yml','jpg','jpeg','png','tif','tiff','pdf')
+        outname = f"redacted_{ts}.{ext if ext in allowed else 'txt'}"
     else:
         outname = f"redacted_{ts}.txt"
     outpath = EXPORT_DIR / outname
 
     if filename:
         raw = uploaded.read()
+        ext = filename.lower().rsplit(".", 1)[-1]
         if ext == "json":
             data = json.loads(raw.decode("utf-8", errors="ignore"))
             red = _redact_structure(
@@ -335,6 +401,7 @@ def route_export():
             if red_blob:
                 df_red = pd.read_csv(io.StringIO(red_blob))
                 df_red = _force_name_redaction(df_red, mode)
+                df_red = _force_location_redaction(df_red, mode)
                 with pd.ExcelWriter(outpath, engine="openpyxl") as writer:
                     df_red.to_excel(writer, index=False)
             elif findings_payload and not quick and selected_ids:
@@ -345,6 +412,7 @@ def route_export():
                         df = xl.parse(sheet_name=sheet, dtype=str, keep_default_na=False)
                         df_red = _df_apply_selected_by_text(df, findings_payload, selected_ids, mode, ip_mode)
                         df_red = _force_name_redaction(df_red, mode)
+                        df_red = _force_location_redaction(df_red, mode)
                         df_red.to_excel(writer, index=False, sheet_name=sheet)
             else:
                 bio = io.BytesIO(raw)
@@ -360,6 +428,7 @@ def route_export():
                                 )
                             )
                         df = _force_name_redaction(df, mode)
+                        df = _force_location_redaction(df, mode)
                         df.to_excel(writer, index=False, sheet_name=sheet)
 
         elif ext in ("csv", "tsv"):
@@ -368,6 +437,7 @@ def route_export():
                 # When we got the preview blob, ensure name-column fallback is also honoured
                 df_red = pd.read_csv(io.StringIO(red_blob), sep=sep, dtype=str, keep_default_na=False)
                 df_red = _force_name_redaction(df_red, mode)
+                df_red = _force_location_redaction(df_red, mode)
                 df_red.to_csv(outpath, index=False, sep=sep)
             else:
                 df = _read_tabular(filename, raw)
@@ -384,7 +454,94 @@ def route_export():
                         )
                     df_red = df
                 df_red = _force_name_redaction(df_red, mode)
+                df_red = _force_location_redaction(df_red, mode)
                 df_red.to_csv(outpath, index=False, sep=sep)
+
+        elif ext in ("jpg", "jpeg", "png", "tif", "tiff"):
+            # Image export with optional face and MRZ strip redaction
+            from PIL import Image
+            import cv2
+            import numpy as np
+            try:
+                import pytesseract
+            except Exception:
+                pytesseract = None
+
+            pil_img = Image.open(io.BytesIO(raw)).convert("RGB")
+
+            # Build selected originals set (tokens to redact on image)
+            selected_set = set()
+            if findings_payload:
+                sel_ids = set(selected_ids or [])
+                for f in findings_payload.get("findings", []):
+                    if not sel_ids or f.get("id") in sel_ids:
+                        o = f.get("original")
+                        if isinstance(o, str) and o.strip():
+                            selected_set.add(o.strip())
+
+            # Flags: redact faces and MRZ strip
+            rf = request.form.get("redact_faces")
+            rm = request.form.get("redact_mrz")
+            redact_faces = (rf == "1") if rf is not None else True
+            redact_mrz   = (rm == "1") if rm is not None else True
+
+            # Prepare images for OCR and drawing
+            cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+            if pytesseract is not None and selected_set:
+                try:
+                    rgb_for_ocr = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+                    data = pytesseract.image_to_data(rgb_for_ocr, output_type=pytesseract.Output.DICT, config="--psm 6")
+                    n = len(data.get("text", []))
+                    for i in range(n):
+                        txt = data["text"][i]
+                        try:
+                            conf_list = data.get("conf", [])
+                            conf = float(conf_list[i]) if i < len(conf_list) else 0.0
+                        except Exception:
+                            conf = 0.0
+                        if conf < 60:
+                            continue
+                        wtxt = (txt or "").strip()
+                        if not wtxt:
+                            continue
+                        if any(wtxt == s or wtxt in s or s in wtxt for s in selected_set):
+                            x, y, w, h = int(data["left"][i]), int(data["top"][i]), int(data["width"][i]), int(data["height"][i])
+                            cv2.rectangle(cv_img, (x, y), (x + w, y + h), (0, 0, 0), thickness=-1)
+                except Exception:
+                    pass
+
+            # Face detection (Haar cascade)
+            if redact_faces:
+                try:
+                    gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+                    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+                    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
+                    for (x, y, w, h) in faces:
+                        cv2.rectangle(cv_img, (x, y), (x + w, y + h), (0, 0, 0), thickness=-1)
+                except Exception:
+                    pass
+
+            # MRZ strip (bottom 30% default)
+            if redact_mrz:
+                try:
+                    h, w = cv_img.shape[:2]
+                    y0 = int(h * 0.70)
+                    cv2.rectangle(cv_img, (0, y0), (w, h), (0, 0, 0), thickness=-1)
+                except Exception:
+                    pass
+
+            # Encode as PNG always for reliability
+            success, enc = cv2.imencode('.png', cv_img)
+            if not success or enc is None or enc.size == 0:
+                altname = f"redacted_{ts}.txt"
+                (EXPORT_DIR / altname).write_text("", encoding="utf-8")
+                return jsonify({"download": url_for("download_file", filename=altname)})
+            outname = f"redacted_{ts}.png"
+            outpath = EXPORT_DIR / outname
+            with open(outpath, 'wb') as f:
+                f.write(enc.tobytes())
+
+            return jsonify({"download": url_for("download_file", filename=outname)})
 
         else:
             # treat as plain text file
@@ -540,6 +697,202 @@ def _get_text_or_canonical_text(req, b64_plain: bool = False):
                 meta = {"source":"excel"}
                 meta.update(_build_spans_for_canonical(canon, "excel"))
                 return canon, meta
+            except Exception:
+                pass
+        # DOCX
+        if filename.endswith(".docx"):
+            try:
+                import io
+                bio = io.BytesIO(raw)
+                try:
+                    from docx import Document
+                except Exception:
+                    Document = None
+                if Document is not None:
+                    doc = Document(bio)
+                    lines = []
+                    for p in doc.paragraphs:
+                        text = (p.text or "").replace("\r\n", "\n").replace("\r", "\n")
+                        if text:
+                            lines.append(text)
+                    for ti, table in enumerate(getattr(doc, "tables", [])):
+                        for ri, row in enumerate(table.rows):
+                            for ci, cell in enumerate(row.cells):
+                                txt = (cell.text or "").replace("\r\n", "\n").replace("\r", "\n")
+                                lines.append(f"table{ti}.r{ri+1}c{ci+1}: {txt}")
+                    canon = "\n".join(lines)
+                    meta = {"source": "docx"}
+                    meta.update(_build_spans_for_canonical(canon, "docx"))
+                    return canon, meta
+            except Exception:
+                pass
+        # Images (JPG/PNG/TIFF)
+        if filename.endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff")):
+            try:
+                from PIL import Image
+                import io
+                import pytesseract
+                img = Image.open(io.BytesIO(raw))
+                # Basic preprocessing: convert to RGB then grayscale for OCR
+                if img.mode not in ("L", "RGB"):
+                    img = img.convert("RGB")
+                gray = img.convert("L")
+                # Light denoise: resize up to help OCR, threshold to reduce artifacts
+                try:
+                    scale = 2 if max(img.size) < 1500 else 1
+                    if scale > 1:
+                        gray = gray.resize((gray.width * scale, gray.height * scale))
+                except Exception:
+                    pass
+                # Try multiple OCR configurations to improve recall
+                ocr_texts = []
+                for cfg in ["--psm 6 -l eng", "--oem 1 --psm 6 -l eng", "--psm 4 -l eng", "--psm 7 -l eng", "--psm 11 -l eng"]:
+                    try:
+                        ocr_texts.append(pytesseract.image_to_string(gray, config=cfg))
+                    except Exception:
+                        pass
+                # If still short, try cropping bottom area (likely MRZ zone on passports)
+                try:
+                    if sum(len(t or "") for t in ocr_texts) < 60:
+                        w, h = gray.width, gray.height
+                        mrz_crop = gray.crop((0, int(h*0.60), w, h))
+                        for cfg in ["--psm 6 -l eng", "--psm 7 -l eng"]:
+                            try:
+                                ocr_texts.append(pytesseract.image_to_string(mrz_crop, config=cfg))
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+                text = "\n".join([t for t in ocr_texts if t])
+                text = _clean_ocr_text((text or "").strip())
+                meta = {"source": "image", "ocr_len": len(text), "ocr_sample": text[:200]}
+                # Always return image source; do not fall back to raw binary
+                return text, meta
+            except Exception:
+                # Return empty OCR text but keep image source
+                return "", {"source": "image", "ocr_len": 0, "ocr_sample": ""}
+        # PDF (text extraction; fallback to OCR)
+        if filename.endswith(".pdf"):
+            try:
+                import io
+                import fitz  # PyMuPDF
+                from PIL import Image
+                import pytesseract
+                doc = fitz.open(stream=raw, filetype="pdf")
+                lines = []
+                for page_index in range(len(doc)):
+                    page = doc.load_page(page_index)
+                    txt = page.get_text("text") or ""
+                    txt = txt.strip()
+                    if not txt:
+                        # OCR fallback for this page
+                        pix = page.get_pixmap(dpi=300)
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        gray = img.convert("L")
+                        txt = (pytesseract.image_to_string(gray) or "").strip()
+                    if txt:
+                        for ln in txt.splitlines():
+                            lines.append(f"page {page_index+1}: {ln}")
+                canon = "\n".join(lines)
+                if canon:
+                    meta = {"source": "pdf"}
+                    meta.update(_build_spans_for_canonical(canon, "pdf"))
+                    return canon, meta
+            except Exception:
+                pass
+        # MBOX (mailbox)
+        if filename.endswith(".mbox"):
+            try:
+                import io
+                import mailbox
+                from email.header import decode_header, make_header
+                bio = io.BytesIO(raw)
+                # mailbox.mbox expects a file path; use mailbox.mboxMessage parsing per message
+                # We'll split on b"\nFrom " separators which delimit messages in mbox
+                blob = bio.getvalue()
+                parts = blob.split(b"\nFrom ")
+                lines = []
+                for i, part in enumerate(parts):
+                    if not part:
+                        continue
+                    chunk = (b"From " + part) if i > 0 else part
+                    try:
+                        msg = mailbox.mboxMessage(chunk)
+                    except Exception:
+                        continue
+                    def dh(v):
+                        try:
+                            return str(make_header(decode_header(v))) if v else ""
+                        except Exception:
+                            return str(v or "")
+                    headers = {
+                        "From": dh(msg.get("From")),
+                        "To": dh(msg.get("To")),
+                        "Cc": dh(msg.get("Cc")),
+                        "Date": dh(msg.get("Date")),
+                        "Subject": dh(msg.get("Subject")),
+                    }
+                    for k, v in headers.items():
+                        if v:
+                            lines.append(f"msg{i+1}.{k}: {v}")
+                    # Body (prefer plain text)
+                    body_texts = []
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            ctype = part.get_content_type() or ""
+                            if ctype.startswith("text/plain"):
+                                try:
+                                    body_texts.append(part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", errors="ignore"))
+                                except Exception:
+                                    pass
+                    else:
+                        try:
+                            body_texts.append(msg.get_payload(decode=True).decode(msg.get_content_charset() or "utf-8", errors="ignore"))
+                        except Exception:
+                            pass
+                    body = "\n".join([b.strip() for b in body_texts if b and b.strip()])
+                    for ln in body.splitlines():
+                        if ln.strip():
+                            lines.append(f"msg{i+1}.body: {ln}")
+                canon = "\n".join(lines)
+                if canon:
+                    meta = {"source": "mbox"}
+                    meta.update(_build_spans_for_canonical(canon, "mbox"))
+                    return canon, meta
+            except Exception:
+                pass
+        # ZIP (flat canonicalization of textual members)
+        if filename.endswith(".zip"):
+            try:
+                import io
+                import zipfile
+                lines = []
+                with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                    for info in zf.infolist():
+                        if info.is_dir():
+                            continue
+                        name = info.filename
+                        # Avoid huge files
+                        if info.file_size > 10 * 1024 * 1024:
+                            lines.append(f"zip:{name}: [SKIPPED LARGE FILE]")
+                            continue
+                        with zf.open(info, "r") as fh:
+                            data = fh.read()
+                        low = name.lower()
+                        if low.endswith((".txt", ".csv", ".tsv", ".json", ".yaml", ".yml")):
+                            try:
+                                txt = data.decode("utf-8", errors="ignore")
+                                for ln in txt.splitlines():
+                                    lines.append(f"zip:{name}: {ln}")
+                            except Exception:
+                                lines.append(f"zip:{name}: [UNREADABLE AS TEXT]")
+                        else:
+                            lines.append(f"zip:{name}: [UNSUPPORTED FILE TYPE]")
+                canon = "\n".join(lines)
+                if canon:
+                    meta = {"source": "zip"}
+                    meta.update(_build_spans_for_canonical(canon, "zip"))
+                    return canon, meta
             except Exception:
                 pass
         # Fallback to raw text
