@@ -49,8 +49,34 @@ def _preview_from_dataframe(df: pd.DataFrame, limit: int = 100) -> str:
 
 # -------- NEW: selection-by-text helpers (avoid span offsets on tables) --------
 
-def _build_selected_pairs(findings_payload: dict, selected_ids: list):
-    """Build (original, replacement) pairs from the selected findings."""
+def _compute_replacement_for_finding(f: dict, mode: str, ip_mode: str) -> str:
+    """Return mode-aware replacement for a single finding's original text.
+
+    Uses apply_replacements_from_findings to honour mode/pseudo rules.
+    """
+    orig = f.get("original")
+    if not isinstance(orig, str) or not orig:
+        return None
+    try:
+        # Adjust span to the substring we are replacing (0..len(orig))
+        mini = dict(f)
+        mini["start"] = 0
+        mini["end"] = len(orig)
+        mini["original"] = orig
+        replaced = apply_replacements_from_findings(
+            orig,
+            [mini],
+            selected_ids=[mini.get("id")],
+            mode=mode,
+            ip_mode=ip_mode,
+        )
+        return replaced
+    except Exception:
+        return None
+
+
+def _build_selected_pairs(findings_payload: dict, selected_ids: list, mode: str, ip_mode: str):
+    """Build (original, replacement) pairs from the selected findings, mode-aware."""
     pairs = []
     if not findings_payload:
         return pairs
@@ -58,8 +84,9 @@ def _build_selected_pairs(findings_payload: dict, selected_ids: list):
     for f in findings_payload.get("findings", []):
         if f.get("id") in sel:
             orig = f.get("original")
-            repl = f.get("replacement") or "[REDACTED]"
-            if isinstance(orig, str) and orig and orig != repl:
+            # Prefer mode-aware replacement; fallback to provided replacement
+            repl = _compute_replacement_for_finding(f, mode, ip_mode) or f.get("replacement") or "[REDACTED]"
+            if isinstance(orig, str) and orig:
                 pairs.append((orig, repl))
     # Longest originals first to minimise partial-overlap cascades
     pairs.sort(key=lambda t: len(t[0]), reverse=True)
@@ -80,9 +107,9 @@ def _apply_pairs_to_text(s: str, pairs: list):
         s = s.replace(orig, repl)
     return s
 
-def _df_apply_selected_by_text(df: pd.DataFrame, findings_payload: dict, selected_ids: list) -> pd.DataFrame:
+def _df_apply_selected_by_text(df: pd.DataFrame, findings_payload: dict, selected_ids: list, mode: str, ip_mode: str) -> pd.DataFrame:
     """Apply selected findings to each cell by exact text match (no spans)."""
-    pairs = _build_selected_pairs(findings_payload, selected_ids)
+    pairs = _build_selected_pairs(findings_payload, selected_ids, mode, ip_mode)
     if not pairs:
         return df.copy()
     return df.applymap(lambda v: _apply_pairs_to_text("" if pd.isna(v) else str(v), pairs))
@@ -171,8 +198,8 @@ def route_redact():
                 findings_payload = None
 
         if findings_payload and not quick and selected_ids:
-            # Apply the user's exact selections per-cell by literal pairs
-            df_red = _df_apply_selected_by_text(df, findings_payload, selected_ids)
+            # Apply the user's exact selections per-cell by literal pairs (mode-aware)
+            df_red = _df_apply_selected_by_text(df, findings_payload, selected_ids, mode, ip_mode)
         else:
             # Quick or no payload: per-cell quick pass using _redact_cell
             def cell(v):
@@ -316,7 +343,7 @@ def route_export():
                 with pd.ExcelWriter(outpath, engine="openpyxl") as writer:
                     for sheet in xl.sheet_names:
                         df = xl.parse(sheet_name=sheet, dtype=str, keep_default_na=False)
-                        df_red = _df_apply_selected_by_text(df, findings_payload, selected_ids)
+                        df_red = _df_apply_selected_by_text(df, findings_payload, selected_ids, mode, ip_mode)
                         df_red = _force_name_redaction(df_red, mode)
                         df_red.to_excel(writer, index=False, sheet_name=sheet)
             else:
@@ -345,7 +372,7 @@ def route_export():
             else:
                 df = _read_tabular(filename, raw)
                 if findings_payload and not quick and selected_ids:
-                    df_red = _df_apply_selected_by_text(df, findings_payload, selected_ids)
+                    df_red = _df_apply_selected_by_text(df, findings_payload, selected_ids, mode, ip_mode)
                 else:
                     # quick/hardened per-cell path
                     for c in df.columns:

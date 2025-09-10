@@ -500,12 +500,17 @@ def _rand_base62(n: int = 28) -> str:
     rng = random.Random(1337)
     return "".join(rng.choice(alphabet) for _ in range(n))
 
-def _pseudonymise_value(label: str, original: str) -> str:
+def _pseudonymise_value(label: str, original: str, ip_mode: str = "rfc5737") -> str:
     fk = Faker()
     if label == "EMAIL":
         return f"user+{_stable_token(label, original, 10)}@example.test"
     if label == "IPV4":
-        # Use documentation ranges for pseudo
+        # Use selected IPv4 pseudonymisation space
+        if ip_mode == "linklocal":
+            # 169.254.0.0/16 (avoid .0 and .255 endings)
+            a = 169; b = 254; c = random.randint(0, 255); d = random.randint(1, 254)
+            return f"{a}.{b}.{c}.{d}"
+        # Default to documentation ranges (TEST-NET-1/2/3)
         base = random.choice(["192.0.2.", "198.51.100.", "203.0.113."])
         return f"{base}{random.randint(1,254)}"
     if label == "IPV6":
@@ -536,6 +541,9 @@ def _pseudonymise_value(label: str, original: str) -> str:
             mask = int(mask)
         except Exception:
             return "198.51.100.0/24"
+        if ip_mode == "linklocal":
+            # Map to link-local network with preserved mask
+            return f"169.254.0.0/{mask if 0 <= mask <= 32 else 24}"
         # map to a documentation /mask on TEST-NET-2
         return f"198.51.100.0/{mask if 0 <= mask <= 32 else 24}"
     if label == "BUSINESS_ID":
@@ -552,7 +560,7 @@ def _pseudonymise_value(label: str, original: str) -> str:
         return fk.city()
     return "[REDACTED]"
 
-def _apply_mode_replacement(label: str, original: str, mode: str, cache: dict) -> str:
+def _apply_mode_replacement(label: str, original: str, mode: str, cache: dict, ip_mode: str = "rfc5737") -> str:
     key = (label, original)
     if mode == "pass":
         return original
@@ -560,7 +568,7 @@ def _apply_mode_replacement(label: str, original: str, mode: str, cache: dict) -
         return get_mask(label)  # uniform "[REDACTED]"
     # pseudonymise
     if key not in cache:
-        cache[key] = _pseudonymise_value(label, original)
+        cache[key] = _pseudonymise_value(label, original, ip_mode=ip_mode)
     return cache[key]
 
 def apply_replacements_from_findings(text: str, findings: List[dict], selected_ids: Optional[List[str]] = None,
@@ -569,6 +577,6 @@ def apply_replacements_from_findings(text: str, findings: List[dict], selected_i
     cache = {}
     for f in sorted(chosen, key=lambda x: x["start"], reverse=True):
         orig = text[f["start"]:f["end"]]
-        repl = _apply_mode_replacement(f["label"], orig, mode, cache)
+        repl = _apply_mode_replacement(f["label"], orig, mode, cache, ip_mode=ip_mode)
         text = text[:f["start"]] + repl + text[f["end"]:]
     return text

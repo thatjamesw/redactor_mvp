@@ -63,6 +63,17 @@
     .tt .bubble{position:absolute;bottom:125%;left:0;transform:translateY(-6px);min-width:220px;max-width:340px;background:#0e1420;border:1px solid var(--chip-border);padding:10px 12px;border-radius:10px;color:#cfe2ff;line-height:1.35;box-shadow:var(--shadow);display:none;z-index:50}
     .tt:hover .bubble{display:block}
     .tt .bubble::after{content:"";position:absolute;top:100%;left:10px;border:6px solid transparent;border-top-color:#0e1420}
+
+    /* New: grouped accordion styles */
+    .accordion{display:grid;gap:8px}
+    .acc-item{border:1px solid var(--border);border-radius:12px;background:var(--panel-2)}
+    .acc-head{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer}
+    .acc-head:hover{background:#0f1622}
+    .acc-title{font-weight:600}
+    .acc-counts{margin-left:auto;color:var(--muted);font-size:12px}
+    .acc-body{padding:10px 12px;display:none}
+    .acc-item.open .acc-body{display:block}
+    .group-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:8px}
   </style>
 </head>
 <body>
@@ -131,14 +142,39 @@
     <section class="panel">
       <div class="head"><strong>2. Review</strong></div>
       <div class="body stack">
-        <div class="row">
+        <div class="row" style="align-items:center; gap:12px;">
           <div id="stats" class="hint">No findings yet.</div>
           <span id="auto-chip" class="badge" style="display:none;margin-left:8px;">Auto-selected: 0</span>
+
           <div style="margin-left:auto"></div>
+
+          <!-- New: filters -->
+          <label class="pill"><input id="flt-high" type="checkbox" checked /><span>Show High</span></label>
+          <label class="pill"><input id="flt-med"  type="checkbox" checked /><span>Show Medium</span></label>
+          <input id="flt-q" type="search" placeholder="Search…" style="height:36px;background:#0f131a;border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 10px;min-width:180px" />
+
+          <!-- Keep global select/deselect -->
           <button id="btn-select-all" class="btn ghost">Select all</button>
           <button id="btn-select-none" class="btn ghost">Deselect all</button>
         </div>
-        <div id="findings" class="findings"></div>
+
+        <!-- Charts: overall vs filtered breakdown -->
+        <div class="grid2" id="charts-wrap">
+          <div class="panel" style="background:transparent;border:1px solid var(--border);">
+            <div class="head" style="border-bottom:1px solid var(--border);"><strong>All findings</strong> <span class="hint" style="margin-left:8px;">from last scan</span></div>
+            <div class="body"><canvas id="chart-overall" height="140"></canvas></div>
+          </div>
+          <div class="panel" style="background:transparent;border:1px solid var(--border);">
+            <div class="head" style="border-bottom:1px solid var(--border);"><strong>Findings by type</strong> <span class="hint" style="margin-left:8px;">label counts</span></div>
+            <div class="body"><canvas id="chart-types" height="180"></canvas></div>
+          </div>
+        </div>
+
+        <!-- New: grouped container -->
+        <div id="groups" class="accordion"></div>
+
+        <!-- Old flat list kept hidden as fallback -->
+        <div id="findings" class="findings hidden"></div>
       </div>
     </section>
 
@@ -227,6 +263,7 @@
     </div>
   </template>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script>
     const $ = s => document.querySelector(s);
     const $$ = s => Array.from(document.querySelectorAll(s));
@@ -284,10 +321,10 @@
     let lastPayload = null;
     let fileObj = null;
 
-    // NEW: track what was accepted so Full export can match exactly
-    let lastSelected = [];     // IDs ticked in Review
-    let lastPreview = '';      // exact preview text (for text exports)
-    let lastCSVBlob = '';      // exact redacted CSV from /redact (for CSV/TSV/XLSX)
+    // Track selections & exact blobs for export parity
+    let lastSelected = [];
+    let lastPreview = '';
+    let lastCSVBlob = '';
 
     fileEl.addEventListener('change', () => { fileObj = fileEl.files[0] || null; });
 
@@ -300,6 +337,206 @@
       return r.json();
     }
 
+    // Filters & grouped UI
+    const fltHigh = $('#flt-high');
+    const fltMed  = $('#flt-med');
+    const fltQ    = $('#flt-q');
+    const groupsEl = $('#groups');
+
+    function bucket(conf){ return (conf ?? 0) >= 0.80 ? 'high' : 'medium'; }
+
+    function groupByLabel(findings){
+      const map = new Map();
+      for (const f of findings){
+        const lbl = f.label || 'OTHER';
+        if (!map.has(lbl)) map.set(lbl, []);
+        map.get(lbl).push(f);
+      }
+      return [...map.entries()].sort((a,b)=>{
+        const hiA = a[1].filter(x => bucket(x.confidence)==='high').length;
+        const hiB = b[1].filter(x => bucket(x.confidence)==='high').length;
+        if (hiA !== hiB) return hiB - hiA;
+        return a[0].localeCompare(b[0]);
+      });
+    }
+
+    function applyFilters(findings){
+      const showHigh = fltHigh.checked;
+      const showMed  = fltMed.checked;
+      const q = (fltQ.value || '').trim().toLowerCase();
+
+      return findings.filter(f=>{
+        const b = bucket(f.confidence);
+        if (b==='high' && !showHigh) return false;
+        if (b==='medium' && !showMed) return false;
+        if (q){
+          const hay = [
+            f.label||'',
+            f.original||'',
+            (f.preview||''),
+            (f.reasoning||[]).join(' ')
+          ].join(' ').toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function countsFor(list){
+      const high = list.filter(f => bucket(f.confidence)==='high').length;
+      const med  = list.length - high;
+      return { total:list.length, high, med };
+    }
+
+    // Charts
+    const chartColors = {
+      high: '#16a34a',
+      med: '#64748b'
+    };
+    let chartOverall = null;
+    let chartTypes = null;
+
+    function ensureCharts() {
+      const ctxOverall = document.getElementById('chart-overall')?.getContext('2d');
+      const ctxTypes = document.getElementById('chart-types')?.getContext('2d');
+      if (ctxOverall && !chartOverall) {
+        chartOverall = new Chart(ctxOverall, {
+          type: 'doughnut',
+          data: { labels: ['High','Medium'], datasets: [{ data:[0,0], backgroundColor:[chartColors.high, chartColors.med] }] },
+          options: { plugins:{ legend:{ labels:{ color:'#cfe2ff' } } }, cutout:'65%', responsive:true }
+        });
+      }
+      if (ctxTypes && !chartTypes) {
+        chartTypes = new Chart(ctxTypes, {
+          type: 'bar',
+          data: { labels: [], datasets: [{ label: 'Findings', data: [], backgroundColor: '#1d4ed8' }] },
+          options: {
+            responsive:true,
+            plugins:{ legend:{ labels:{ color:'#cfe2ff' } } },
+            scales:{
+              x:{ ticks:{ color:'#cfe2ff' }, grid:{ color:'rgba(255,255,255,0.06)' } },
+              y:{ ticks:{ color:'#cfe2ff' }, grid:{ color:'rgba(255,255,255,0.06)' }, beginAtZero:true, precision:0 }
+            }
+          }
+        });
+      }
+    }
+
+    function updateCharts(payload, filteredList){
+      ensureCharts();
+      const all = payload.findings || [];
+      const cAll = countsFor(all);
+      if (chartOverall) {
+        chartOverall.data.datasets[0].data = [cAll.high, cAll.med];
+        chartOverall.update();
+      }
+      if (chartTypes) {
+        const byLabel = new Map();
+        for (const f of all) {
+          const lbl = f.label || 'OTHER';
+          byLabel.set(lbl, (byLabel.get(lbl) || 0) + 1);
+        }
+        const entries = [...byLabel.entries()].sort((a,b)=> b[1]-a[1]);
+        chartTypes.data.labels = entries.map(e=>e[0]);
+        chartTypes.data.datasets[0].data = entries.map(e=>e[1]);
+        chartTypes.update();
+      }
+    }
+
+    function buildCard(item){
+      const t = document.getElementById('tmpl-card').content.cloneNode(true);
+      const card = t.querySelector('.card');
+      const lab = card.querySelector('.label');
+      lab.textContent = item.label;
+      lab.className = 'label ' + (item.confidence >= 0.80 ? 'lab-high' : 'lab-med');
+      card.querySelector('.conf').textContent = `conf ${item.confidence?.toFixed(2) ?? '0.00'}`;
+      card.querySelector('.prev').textContent = (item.original ? `${item.original} → ${item.replacement || ''}` : (item.preview || ''));
+      card.querySelector('.why').textContent = (item.reasoning || []).join(', ');
+
+      const chk = card.querySelector('.chk');
+      chk.dataset.id = item.id;
+      chk.checked = item.confidence >= 0.80;
+      return card;
+    }
+
+    function renderGroupedFindings(payload){
+      renderDebug(payload);
+
+      const all = payload.findings || [];
+      const filtered = applyFilters(all);
+
+      // Summary
+      const total = payload.summary?.total ?? all.length;
+      const hi = (payload.summary?.high_confidence) ?? all.filter(f=>bucket(f.confidence)==='high').length;
+      const med = (payload.summary?.medium_confidence) ?? (total - hi);
+      statsEl.textContent = total ? `Total: ${total} • High: ${hi} • Medium: ${med}` : 'No findings.';
+
+      // Charts
+      updateCharts(payload, filtered);
+
+      const auto = all.filter(x => (x.confidence ?? 0) >= 0.80).length;
+      const chip = document.getElementById('auto-chip');
+      if (chip){
+        if (total) { chip.style.display='inline-flex'; chip.textContent = `Auto-selected: ${auto}`; }
+        else { chip.style.display='none'; }
+      }
+
+      // Grouped rendering
+      const grouped = groupByLabel(filtered);
+      groupsEl.innerHTML = '';
+
+      if (grouped.length === 0){
+        groupsEl.innerHTML = '<div class="hint">No results match your filters.</div>';
+        return;
+      }
+
+      grouped.forEach(([label, list])=>{
+        const {total, high, med} = countsFor(list);
+
+        const item = document.createElement('div');
+        item.className = 'acc-item';
+
+        const head = document.createElement('div');
+        head.className = 'acc-head';
+        head.innerHTML = `
+          <div class="acc-title">${label}</div>
+          <div class="group-actions">
+            <button type="button" class="btn ghost btn-group-all">Select all</button>
+            <button type="button" class="btn ghost btn-group-none">None</button>
+            <button type="button" class="btn ghost btn-toggle">Expand</button>
+          </div>
+          <div class="acc-counts">${total} total • ${high} high • ${med} medium</div>
+        `;
+
+        const body = document.createElement('div');
+        body.className = 'acc-body';
+        list.forEach(f => body.appendChild(buildCard(f)));
+
+        head.querySelector('.btn-toggle').addEventListener('click', ()=>{
+          item.classList.toggle('open');
+        });
+        head.querySelector('.btn-group-all').addEventListener('click', ()=>{
+          body.querySelectorAll('.chk').forEach(ch => ch.checked = true);
+        });
+        head.querySelector('.btn-group-none').addEventListener('click', ()=>{
+          body.querySelectorAll('.chk').forEach(ch => ch.checked = false);
+        });
+
+        item.appendChild(head);
+        item.appendChild(body);
+        groupsEl.appendChild(item);
+      });
+    }
+
+    // Wire filters
+    [fltHigh, fltMed].forEach(el => el.addEventListener('change', ()=>{
+      if (lastPayload) renderGroupedFindings(lastPayload);
+    }));
+    fltQ.addEventListener('input', ()=>{
+      if (lastPayload) renderGroupedFindings(lastPayload);
+    });
+
+    // Original actions
     $('#btn-scan').addEventListener('click', async () => {
       const fd = new FormData();
       if (fileObj) fd.append('file', fileObj);
@@ -314,7 +551,7 @@
       renderFindings(data);
       outputEl.textContent = 'Scan complete. Review and accept.';
 
-      // NEW: reset selection and blobs on a fresh scan
+      // reset selection and blobs on a fresh scan
       lastSelected = [];
       lastPreview = '';
       lastCSVBlob = '';
@@ -324,7 +561,7 @@
     $('#btn-accept').addEventListener('click', async () => {
       if (!lastPayload) { outputEl.textContent = 'Scan first.'; return; }
       const selected = $$('.chk').filter(x => x.checked).map(x => x.dataset.id);
-      lastSelected = selected; // NEW
+      lastSelected = selected;
 
       const fd = new FormData();
       if (fileObj) fd.append('file', fileObj);
@@ -342,8 +579,8 @@
       const data = await postForm('/redact', fd);
 
       outputEl.textContent = data.redacted || '';
-      lastPreview = data.redacted || '';     // NEW: remember exact preview
-      lastCSVBlob = data.redacted_csv || ''; // NEW: CSV/TSV/XLSX exact blob
+      lastPreview = data.redacted || '';
+      lastCSVBlob = data.redacted_csv || '';
 
       refreshExportState();
     });
@@ -363,9 +600,9 @@
       const data = await postForm('/redact', fd);
       outputEl.textContent = data.redacted || '';
 
-      lastPreview = data.redacted || '';     // NEW
-      lastCSVBlob = data.redacted_csv || ''; // NEW
-      lastSelected = [];                      // NEW
+      lastPreview = data.redacted || '';
+      lastCSVBlob = data.redacted_csv || '';
+      lastSelected = [];
 
       refreshExportState();
     });
@@ -399,9 +636,9 @@
       const red = await postForm('/redact', fdQuick);
       outputEl.textContent = red.redacted || '';
 
-      lastPreview = red.redacted || '';       // NEW
-      lastCSVBlob = red.redacted_csv || '';   // NEW
-      lastSelected = [];                      // NEW
+      lastPreview = red.redacted || '';
+      lastCSVBlob = red.redacted_csv || '';
+      lastSelected = [];
 
       refreshExportState();
       document.querySelectorAll('.panel')[2]?.scrollIntoView({behavior:'smooth', block:'start'});
@@ -414,15 +651,12 @@
 
       const isQuick = (expMode() === 'quick');
       if (isQuick) {
-        // Quick export: let the server rescan/quick-redact
         fd.append('quick','1');
       } else {
-        // Full export: export exactly what was accepted
         if (!lastPayload) { expLink.textContent = 'Scan & Accept before Full export.'; return; }
         fd.append('findings_json', JSON.stringify(lastPayload));
         lastSelected.forEach(id => fd.append('selected_ids', id));
 
-        // Exact pass-through: prefer CSV blob for tables, else preview text
         if (lastCSVBlob) {
           fd.append('redacted_csv', lastCSVBlob);
         } else if ((outputEl.textContent || '').trim()) {
@@ -430,7 +664,6 @@
         }
       }
 
-      // Common flags
       fd.append('mode', mode());
       fd.append('ip_mode', ipMode());
       fd.append('use_ner', useNER.checked ? '1' : '0');
@@ -443,42 +676,16 @@
       expLink.innerHTML = data.download ? `<a class="hint" href="${data.download}">Download redacted file</a>` : (data.error || 'Export failed');
     });
 
+    // Global select/deselect still works across grouped cards
     $('#btn-select-all').addEventListener('click', () => { $$('.chk').forEach(ch => ch.checked = true); });
     $('#btn-select-none').addEventListener('click', () => { $$('.chk').forEach(ch => ch.checked = false); });
 
+    // Override old flat renderer to use grouped UI
     function renderFindings(payload){
-      renderDebug(payload);
-      const f = payload.findings || [];
-      const total = payload.summary?.total ?? f.length;
-      const hi = payload.summary?.high_confidence ?? 0;
-      const med = payload.summary?.medium_confidence ?? 0;
-      statsEl.textContent = total ? `Total: ${total} • High: ${hi} • Medium: ${med}` : 'No findings.';
-
-      const auto = f.filter(x => (x.confidence ?? 0) >= 0.80).length;
-      const chip = document.getElementById('auto-chip');
-      if (chip){
-        if (total) { chip.style.display='inline-flex'; chip.textContent = `Auto-selected: ${auto}`; }
-        else { chip.style.display='none'; }
-      }
-
-      findingsEl.innerHTML = '';
-      f.forEach(addCard);
-    }
-
-    function addCard(item){
-      const t = document.getElementById('tmpl-card').content.cloneNode(true);
-      const card = t.querySelector('.card');
-      const lab = card.querySelector('.label');
-      lab.textContent = item.label;
-      lab.className = 'label ' + (item.confidence >= 0.80 ? 'lab-high' : 'lab-med');
-      card.querySelector('.conf').textContent = `conf ${item.confidence?.toFixed(2) ?? '0.00'}`;
-      card.querySelector('.prev').textContent = (item.original ? `${item.original} → ${item.replacement || ''}` : (item.preview || ''));
-      card.querySelector('.why').textContent = (item.reasoning || []).join(', ');
-
-      const chk = card.querySelector('.chk');
-      chk.dataset.id = item.id;
-      chk.checked = item.confidence >= 0.80;
-      findingsEl.appendChild(card);
+      // keep debug + summary + auto chip logic inside grouped renderer
+      renderGroupedFindings(payload);
+      // ensure old flat container remains hidden
+      findingsEl.classList.add('hidden');
     }
 
     function refreshExportState() {
