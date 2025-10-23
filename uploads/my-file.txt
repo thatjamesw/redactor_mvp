@@ -1,0 +1,28 @@
+SWARM Chat System - API Key and Usage Instructions
+=================================================
+
+Your Development API Key: sk-dev-NN-tsk_jpbatgejTDQY2m1qMql4TShe2lTiDvyP1cJY
+
+How to use:
+-----------
+1. Include the API key in request headers:
+   X-API-Key: sk-dev-NN-tsk_jpbatgejTDQY2m1qMql4TShe2lTiDvyP1cJY
+
+2. Test endpoints:
+   - Health Check: GET http://localhost:5006/health
+   - Agent List: GET http://localhost:5006/api/agents
+   - Chat (1v1): POST http://localhost:5006/api/agents/chat/product_01
+   - Multi-Agent: POST http://localhost:5006/api/agents/collaborate
+
+3. Web Interface:
+   - Main: http://localhost:5006/
+   - Debug: http://localhost:5006/chat-debug.html
+
+4. Example chat request:
+   curl -X POST http://localhost:5006/api/agents/chat/product_01 \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: sk-dev-NN-tsk_jpbatgejTDQY2m1qMql4TShe2lTiDvyP1cJY" \
+     -d '{"message": "Hello!", "model": "openai/gpt-4"}'
+
+5. WebSocket connection:
+   Connect to ws://localhost:5006/socket.io/ with Socket.IO client

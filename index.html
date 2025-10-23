@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Redactor — Scan • Review • Accept</title>
+  <style>
+    :root{
+      --bg:#101112;
+      --panel:#141414;
+      --panel-2:#161616;
+      --muted:#a3a3a3;
+      --text:#f5f5f5;
+      --sub:#e5e5e5;
+      --border:#262626;
+      --blue:#6b7280; /* neutral gray accent */
+      --blue-2:#4b5563; /* neutral darker gray */
+      --chip:#141414;
+      --chip-border:#3f3f46;
+      --shadow:0 10px 30px rgba(0,0,0,.25);
+      --good:#1a2e1d;
+      --goodtxt:#cfeccc;
+      --med:#2b2b2b;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    header{position:sticky;top:0;background:linear-gradient(180deg,#0f1115,rgba(15,17,21,.85));backdrop-filter:saturate(160%) blur(6px);border-bottom:1px solid var(--border);z-index:20}
+    .h-wrap{max-width:1100px;margin:0 auto;padding:14px 16px;display:flex;gap:12px;align-items:center}
+    .title{font-weight:700;font-size:15px;letter-spacing:.3px}
+    .badge{margin-left:auto;border:1px solid var(--chip-border);background:var(--chip);padding:6px 10px;border-radius:999px;color:var(--muted);font-size:12px}
+    .container{max-width:1100px;margin:0 auto;padding:16px;display:grid;gap:28px}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow)}
+    .panel .head{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+    .panel .body{padding:16px}
+    .muted{color:var(--muted)}
+    .stack{display:grid;gap:12px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    textarea{width:100%;min-height:180px;background:#111111;color:var(--text);border:1px solid var(--border);border-radius:12px;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .btn{appearance:none;border:0;border-radius:10px;padding:10px 14px;background:var(--blue);color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:8px;height:36px}
+    .btn.sec{background:#343a46}
+    .btn.ghost{background:transparent;border:1px solid var(--blue);color:#e5e7eb}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+    .seg{display:inline-flex;align-items:stretch;border:1px solid var(--chip-border);border-radius:10px;overflow:hidden;background:rgba(255,255,255,.03)}
+    .seg label{display:inline-flex;align-items:center;position:relative}
+    .seg label input{position:absolute;opacity:0;pointer-events:none}
+    .seg label span{padding:8px 14px;display:inline-block;line-height:1;font-size:14px;color:var(--sub);user-select:none;height:36px;display:inline-flex;align-items:center}
+    .seg label + label span{border-left:1px solid var(--chip-border)}
+    .seg label input:checked + span{background:var(--blue);color:#fff}
+    .pill{border:1px solid var(--chip-border);border-radius:999px;padding:6px 10px;display:flex;align-items:center;gap:8px}
+    .findings{display:grid;gap:8px}
+    .card{background:var(--panel-2);border:1px solid var(--border);border-radius:12px;padding:10px;display:grid;gap:6px}
+    .label{padding:2px 8px;border-radius:999px;border:1px solid var(--chip-border);font-size:12px}
+    .lab-high{background:var(--good);color:var(--goodtxt)}
+    .lab-med{background:var(--med);color:#eaeef6}
+    .prev{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#cbd5e1;font-size:12px;white-space:pre-wrap}
+    .hint{font-size:12px;color:var(--muted)}
+    .out{white-space:pre-wrap;background:#121212;border:1px solid var(--border);padding:12px;border-radius:12px;min-height:160px}
+    .grid2{display:grid;grid-template-columns:repeat(auto-fit, minmax(260px,1fr));gap:10px}
+    .hidden{display:none}
+    .tt{position:relative;display:inline-flex;align-items:center;gap:6px}
+    .tt .i{width:16px;height:16px;border-radius:50%;border:1px solid var(--chip-border);display:inline-flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);cursor:help;background:var(--chip)}
+    .tt .bubble{position:absolute;bottom:125%;left:0;transform:translateY(-6px);min-width:220px;max-width:340px;background:#151515;border:1px solid var(--chip-border);padding:10px 12px;border-radius:10px;color:#e5e7eb;line-height:1.35;box-shadow:var(--shadow);display:none;z-index:50}
+    .tt:hover .bubble{display:block}
+    .tt .bubble::after{content:"";position:absolute;top:100%;left:10px;border:6px solid transparent;border-top-color:#0e1420}
+
+    /* New: grouped accordion styles */
+    .accordion{display:grid;gap:8px}
+    .acc-item{border:1px solid var(--border);border-radius:12px;background:var(--panel-2)}
+    .acc-head{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer}
+    .acc-head:hover{background:#1f1f1f}
+    .acc-title{font-weight:600}
+    .acc-counts{margin-left:auto;color:var(--muted);font-size:12px}
+    .acc-body{padding:10px 12px;display:none}
+    .acc-item.open .acc-body{display:block}
+    .group-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:8px}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="h-wrap">
+      <div class="title">Redactor — <span class="muted">Scan • Review • Accept</span></div>
+      <div class="badge">Local only • No outbound calls</div>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Step 1: Scan -->
+    <section class="panel">
+      <div class="head"><strong>1. Scan</strong></div>
+      <div class="body stack">
+        <div class="grid2">
+          <div class="stack">
+            <div class="muted">Input type</div>
+            <div class="seg">
+              <label><input type="radio" name="input_type" value="text" checked /><span>Text</span></label>
+              <label><input type="radio" name="input_type" value="image" /><span>Image</span></label>
+              <label><input type="radio" name="input_type" value="document" /><span>Document</span></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="row">
+            <label id="scan-hint" class="muted">Paste text or choose a file</label>
+            <div class="tt">
+              <div class="i">i</div>
+              <div id="scan-tip" class="bubble">Paste any text, or upload CSV/TSV/XLSX/JSON/YAML. Structure is preserved on export (YAML multi-doc and Kubernetes Secret-aware).</div>
+            </div>
+          </div>
+          <div id="text-wrap"><textarea id="text"></textarea></div>
+          <div id="file-wrap"><input id="file" type="file" /></div>
+        </div>
+
+        <div class="grid2">
+          <label class="pill">
+            <input id="use-ner" type="checkbox" />
+            <span>Detect names & places</span>
+            <div class="tt"><div class="i">i</div><div class="bubble">Flags PERSON / ORG / GPE (people, organisations, places). Uses local spaCy if installed.</div></div>
+          </label>
+          <label class="pill">
+            <input id="intl-ids" type="checkbox" />
+            <span>International IDs (IBAN/BIC/VAT)</span>
+            <div class="tt"><div class="i">i</div><div class="bubble">Validates and redacts IBAN/BIC/VAT via python-stdnum (if installed).</div></div>
+          </label>
+          <label class="pill">
+            <input id="ignore-headers" type="checkbox" />
+            <span>Ignore first line (headers)</span>
+            <div class="tt"><div class="i">i</div><div class="bubble">When pasting plain text tables/CSV, ignore the first line to avoid redacting column headers.</div></div>
+          </label>
+          <label class="pill">
+            <input id="strict-email" type="checkbox" checked />
+            <span>Strict email matching</span>
+            <div class="tt"><div class="i">i</div><div class="bubble"><strong>Strict</strong>: only common TLDs (.com, .org, .net, .gov, .edu, .fi, etc.).<br><strong>Permissive</strong>: match any RFC-like email, including unusual/private domains.</div></div>
+          </label>
+          <label class="pill">
+            <input id="b64-plain" type="checkbox" />
+            <span>Treat base64 as plaintext (non-Secret)</span>
+            <div class="tt"><div class="i">i</div><div class="bubble">Attempt to decode base64 values in JSON/YAML that are not Kubernetes Secrets, process them, then re-encode.</div></div>
+          </label>
+          <label class="pill">
+            <input id="debug" type="checkbox" />
+            <span>Debug (verbose)</span>
+            <div class="tt"><div class="i">i</div><div class="bubble">Prints regex and NER matches to the server console for troubleshooting.</div></div>
+          </label>
+        </div>
+
+        <div class="row">
+          <button id="btn-scan" class="btn sec">Scan</button>
+          <button id="btn-scan-quick" class="btn">Scan & quick redact</button>
+          <span class="hint">We scan locally; nothing leaves your machine.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 2: Review -->
+    <section class="panel">
+      <div class="head"><strong>2. Review</strong></div>
+      <div class="body stack">
+        <div class="row" style="align-items:center; gap:12px;">
+          <div id="stats" class="hint">No findings yet.</div>
+          <span id="image-mode" class="badge" style="display:none;margin-left:8px;">Image mode: text findings disabled</span>
+          <span id="auto-chip" class="badge" style="display:none;margin-left:8px;">Auto-selected: 0</span>
+
+          <div style="margin-left:auto"></div>
+
+          <!-- New: filters -->
+          <label class="pill"><input id="flt-high" type="checkbox" checked /><span>Show High</span></label>
+          <label class="pill"><input id="flt-med"  type="checkbox" checked /><span>Show Medium</span></label>
+          <input id="flt-q" type="search" placeholder="Search…" style="height:36px;background:#0f131a;border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 10px;min-width:180px" />
+
+          <!-- Keep global select/deselect -->
+          <button id="btn-select-all" class="btn ghost">Select all</button>
+          <button id="btn-select-none" class="btn ghost">Deselect all</button>
+        </div>
+
+        <!-- Charts: overall vs filtered breakdown -->
+        <div class="grid2" id="charts-wrap">
+          <div class="panel" style="background:transparent;border:1px solid var(--border);">
+            <div class="head" style="border-bottom:1px solid var(--border);"><strong>All findings</strong> <span class="hint" style="margin-left:8px;">from last scan</span></div>
+            <div class="body"><canvas id="chart-overall" height="140"></canvas></div>
+          </div>
+          <div class="panel" style="background:transparent;border:1px solid var(--border);">
+            <div class="head" style="border-bottom:1px solid var(--border);"><strong>Findings by type</strong> <span class="hint" style="margin-left:8px;">label counts</span></div>
+            <div class="body"><canvas id="chart-types" height="180"></canvas></div>
+          </div>
+        </div>
+
+        <!-- New: grouped container -->
+        <div id="groups" class="accordion"></div>
+
+        <!-- Old flat list kept hidden as fallback -->
+        <div id="findings" class="findings hidden"></div>
+      </div>
+    </section>
+
+    <!-- Step 3: Accept -->
+    <section class="panel">
+      <div class="head"><strong>3. Accept</strong></div>
+      <div class="body stack">
+        <div class="grid2">
+          <div class="stack">
+            <div class="muted">Mode</div>
+            <div class="seg">
+              <label><input type="radio" name="mode" value="redact" checked /><span>Redact</span></label>
+              <label><input type="radio" name="mode" value="pseudo" /><span>Pseudonymise</span></label>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="row">
+              <div class="muted">IPv4</div>
+              <div class="tt"><div class="i">i</div><div class="bubble">RFC 5737 uses reserved documentation ranges (192.0.2.x). 169.254/16 uses link-local space.</div></div>
+            </div>
+            <div class="seg">
+              <label><input type="radio" name="ip_mode" value="rfc5737" checked /><span>RFC 5737</span></label>
+              <label><input type="radio" name="ip_mode" value="linklocal" /><span>169.254/16</span></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <button id="btn-accept" class="btn">Accept selected</button>
+          <button id="btn-quick" class="btn sec">Quick redact</button>
+        </div>
+
+        <div class="stack">
+          <div class="row">
+            <div class="muted">Output</div>
+            <div class="tt"><div class="i">i</div><div class="bubble">Redacted or pseudonymised text appears here. Use Export to download files in their original formats.</div></div>
+          </div>
+          <div id="output" class="out" aria-live="polite"></div>
+          <div class="row">
+            <div class="seg">
+              <label><input type="radio" name="exp_mode" value="quick" checked /><span>Quick</span></label>
+              <label><input type="radio" name="exp_mode" value="full" /><span>Full</span></label>
+            </div>
+            <label class="pill" id="opt-faces" style="display:none;"><input id="chk-faces" type="checkbox" checked /><span>Redact faces</span></label>
+            <label class="pill" id="opt-mrz" style="display:none;"><input id="chk-mrz" type="checkbox" checked /><span>Redact MRZ strip</span></label>
+            <button id="btn-export" class="btn ghost" disabled>Export file</button>
+            <span id="exp-link" class="hint"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Debug (collapsible) -->
+  <section id="debug-panel" class="panel hidden" style="max-width:1100px;margin:0 auto 28px;">
+    <div class="head"><strong>Debug</strong> <span class="hint">Verbose events from the last scan</span></div>
+    <div class="body">
+      <div class="hint" id="debug-empty">No debug events.</div>
+      <div class="stack hidden" id="debug-table-wrap">
+        <table style="width:100%; border-collapse:collapse; font-size:12px">
+          <thead>
+            <tr>
+              <th style="text-align:left; border-bottom:1px solid var(--border); padding:6px">Event</th>
+              <th style="text-align:left; border-bottom:1px solid var(--border); padding:6px">Label</th>
+              <th style="text-align:left; border-bottom:1px solid var(--border); padding:6px">Span</th>
+              <th style="text-align:left; border-bottom:1px solid var(--border); padding:6px">Preview</th>
+              <th style="text-align:left; border-bottom:1px solid var(--border); padding:6px">Reasoning</th>
+              <th style="text-align:left; border-bottom:1px solid var(--border); padding:6px">Conf</th>
+            </tr>
+          </thead>
+          <tbody id="debug-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <template id="tmpl-card">
+    <div class="card">
+      <div class="row">
+        <span class="label"></span>
+        <span class="hint conf"></span>
+        <div style="margin-left:auto"></div>
+        <label class="pill"><input type="checkbox" class="chk" /> Select</label>
+      </div>
+      <div class="prev"></div>
+      <details class="hint"><summary>Why flagged?</summary><div class="why"></div></details>
+    </div>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    const $ = s => document.querySelector(s);
+    const $$ = s => Array.from(document.querySelectorAll(s));
+
+    const textEl = $('#text');
+    const fileEl = $('#file');
+    const inputTypeEls = $$('input[name="input_type"]');
+    const useNER = $('#use-ner');
+    const intlIDs = $('#intl-ids');
+    const ignoreHeaders = $('#ignore-headers');
+    const strictEmail = $('#strict-email');
+    const b64Plain = $('#b64-plain');
+    const debugEl = $('#debug');
+
+    const debugPanel = $('#debug-panel');
+    const debugTbody = $('#debug-tbody');
+    const debugEmpty = $('#debug-empty');
+    const debugWrap  = $('#debug-table-wrap');
+
+    debugEl.addEventListener('change', () => {
+      debugPanel.classList.toggle('hidden', !debugEl.checked);
+    });
+
+    function renderDebug(payload){
+      const events = payload.debug || [];
+      const show = debugEl.checked && events.length > 0;
+      debugPanel.classList.toggle('hidden', !debugEl.checked);
+      debugWrap.classList.toggle('hidden', !show);
+      debugEmpty.classList.toggle('hidden', show);
+
+      if (!show) {
+        debugTbody.innerHTML = '';
+        return;
+      }
+
+      debugTbody.innerHTML = events.map(ev => {
+        const conf = (typeof ev.confidence === 'number') ? ev.confidence.toFixed(2) : '';
+        const rsn  = (ev.reasoning || []).join(', ');
+        const span = (typeof ev.start==='number' && typeof ev.end==='number') ? `[${ev.start}:${ev.end}]` : '';
+        const prev = (ev.original || '').toString().replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        return `<tr>
+          <td style="padding:6px; border-bottom:1px solid var(--border)">${ev.event||''}</td>
+          <td style="padding:6px; border-bottom:1px solid var(--border)">${ev.label || ''}</td>
+          <td style="padding:6px; border-bottom:1px solid var(--border)">${span}</td>
+          <td style="padding:6px; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px">${prev}</td>
+          <td style="padding:6px; border-bottom:1px solid var(--border)">${rsn}</td>
+          <td style="padding:6px; border-bottom:1px solid var(--border)">${conf}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    const findingsEl = $('#findings');
+    const statsEl = $('#stats');
+    const outputEl = $('#output');
+    const expLink = $('#exp-link');
+
+    let lastPayload = null;
+    let fileObj = null;
+
+    // Track selections & exact blobs for export parity
+    let lastSelected = [];
+    let lastPreview = '';
+    let lastCSVBlob = '';
+
+    fileEl.addEventListener('change', () => { fileObj = fileEl.files[0] || null; });
+    function isImageFile(name){
+      if (!name) return false;
+      const n = name.toLowerCase();
+      return n.endsWith('.jpg') || n.endsWith('.jpeg') || n.endsWith('.png') || n.endsWith('.tif') || n.endsWith('.tiff');
+    }
+    fileEl.addEventListener('change', () => {
+      const banner = document.getElementById('image-mode');
+      const optFaces = document.getElementById('opt-faces');
+      const optMrz = document.getElementById('opt-mrz');
+      const isImg = isImageFile(fileEl.value || (fileEl.files[0]?.name || ''));
+      banner.style.display = isImg ? 'inline-flex' : 'none';
+      optFaces.style.display = isImg ? 'inline-flex' : 'none';
+      optMrz.style.display = isImg ? 'inline-flex' : 'none';
+    });
+
+    // If a .txt file is selected, append its contents to the textarea and clear the file selection
+    function isAppendableToText(name){
+      const n = (name || '').toLowerCase();
+      return n.endsWith('.txt');
+    }
+    fileEl.addEventListener('change', () => {
+      const f = fileEl.files && fileEl.files[0];
+      if (!f) return;
+      if (isAppendableToText(f.name)){
+        const reader = new FileReader();
+        reader.onload = () => {
+          const cur = textEl.value || '';
+          const add = reader.result || '';
+          textEl.value = cur ? (cur + '\n' + add) : add;
+          // Clear file so subsequent actions use the textarea as input
+          fileEl.value = '';
+          fileObj = null;
+          refreshExportState();
+        };
+        try { reader.readAsText(f); } catch (e) {}
+      }
+    });
+
+    function inputType(){
+      const el = document.querySelector('input[name="input_type"]:checked');
+      return el ? el.value : 'text';
+    }
+
+    function configureInputUI(){
+      const t = inputType();
+      const textWrap = document.getElementById('text-wrap');
+      const fileWrap = document.getElementById('file-wrap');
+      const hint = document.getElementById('scan-hint');
+      const tip = document.getElementById('scan-tip');
+
+      // Defaults
+      let accept = '';
+      if (t === 'text'){
+        textWrap.classList.remove('hidden');
+        fileWrap.classList.remove('hidden');
+        hint.textContent = 'Paste text or choose a text/structured file';
+        tip.textContent = 'Paste any text, or upload CSV/TSV/XLSX/JSON/YAML/TXT. Structure is preserved on export.';
+        accept = '.txt,.csv,.tsv,.json,.yaml,.yml,.xlsx,.xls';
+      } else if (t === 'image'){
+        textWrap.classList.add('hidden');
+        fileWrap.classList.remove('hidden');
+        hint.textContent = 'Choose an image (JPG/PNG/TIFF)';
+        tip.textContent = 'Images are OCR\'d locally. Optional face and MRZ redaction available during Export.';
+        accept = 'image/*';
+      } else {
+        textWrap.classList.add('hidden');
+        fileWrap.classList.remove('hidden');
+        hint.textContent = 'Choose a document (PDF/DOCX/MBOX/ZIP)';
+        tip.textContent = 'We extract text safely from documents like PDF, DOCX, MBOX, or ZIP archives.';
+        accept = '.pdf,.docx,.mbox,.zip';
+      }
+      fileEl.value = '';
+      fileObj = null;
+      fileEl.setAttribute('accept', accept);
+
+      // Refresh any image-only UI toggles
+      const ev = new Event('change');
+      fileEl.dispatchEvent(ev);
+      refreshExportState();
+    }
+
+    inputTypeEls.forEach(el => el.addEventListener('change', configureInputUI));
+    configureInputUI();
+
+    function mode() { return document.querySelector('input[name="mode"]:checked').value; }
+    function ipMode() { return document.querySelector('input[name="ip_mode"]:checked').value; }
+    function expMode() { return document.querySelector('input[name="exp_mode"]:checked').value; }
+
+    async function postForm(url, fd){
+      const r = await fetch(url, { method:'POST', body: fd });
+      return r.json();
+    }
+
+    // Filters & grouped UI
+    const fltHigh = $('#flt-high');
+    const fltMed  = $('#flt-med');
+    const fltQ    = $('#flt-q');
+    const groupsEl = $('#groups');
+
+    function bucket(conf){ return (conf ?? 0) >= 0.80 ? 'high' : 'medium'; }
+
+    function groupByLabel(findings){
+      const map = new Map();
+      for (const f of findings){
+        const lbl = f.label || 'OTHER';
+        if (!map.has(lbl)) map.set(lbl, []);
+        map.get(lbl).push(f);
+      }
+      return [...map.entries()].sort((a,b)=>{
+        const hiA = a[1].filter(x => bucket(x.confidence)==='high').length;
+        const hiB = b[1].filter(x => bucket(x.confidence)==='high').length;
+        if (hiA !== hiB) return hiB - hiA;
+        return a[0].localeCompare(b[0]);
+      });
+    }
+
+    function applyFilters(findings){
+      const showHigh = fltHigh.checked;
+      const showMed  = fltMed.checked;
+      const q = (fltQ.value || '').trim().toLowerCase();
+
+      return findings.filter(f=>{
+        const b = bucket(f.confidence);
+        if (b==='high' && !showHigh) return false;
+        if (b==='medium' && !showMed) return false;
+        if (q){
+          const hay = [
+            f.label||'',
+            f.original||'',
+            (f.preview||''),
+            (f.reasoning||[]).join(' ')
+          ].join(' ').toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function countsFor(list){
+      const high = list.filter(f => bucket(f.confidence)==='high').length;
+      const med  = list.length - high;
+      return { total:list.length, high, med };
+    }
+
+    // Charts
+    const chartColors = {
+      high: '#16a34a',
+      med: '#64748b'
+    };
+    let chartOverall = null;
+    let chartTypes = null;
+
+    function ensureCharts() {
+      const ctxOverall = document.getElementById('chart-overall')?.getContext('2d');
+      const ctxTypes = document.getElementById('chart-types')?.getContext('2d');
+      if (ctxOverall && !chartOverall) {
+        chartOverall = new Chart(ctxOverall, {
+          type: 'doughnut',
+          data: { labels: ['High','Medium'], datasets: [{ data:[0,0], backgroundColor:[chartColors.high, chartColors.med] }] },
+          options: { plugins:{ legend:{ labels:{ color:'#cfe2ff' } } }, cutout:'65%', responsive:true }
+        });
+      }
+      if (ctxTypes && !chartTypes) {
+        chartTypes = new Chart(ctxTypes, {
+          type: 'bar',
+          data: { labels: [], datasets: [{ label: 'Findings', data: [], backgroundColor: '#6b7280' }] },
+          options: {
+            responsive:true,
+            plugins:{ legend:{ labels:{ color:'#cfe2ff' } } },
+            scales:{
+              x:{ ticks:{ color:'#cfe2ff' }, grid:{ color:'rgba(255,255,255,0.06)' } },
+              y:{ ticks:{ color:'#cfe2ff' }, grid:{ color:'rgba(255,255,255,0.06)' }, beginAtZero:true, precision:0 }
+            }
+          }
+        });
+      }
+    }
+
+    function updateCharts(payload, filteredList){
+      ensureCharts();
+      const all = payload.findings || [];
+      const cAll = countsFor(all);
+      if (chartOverall) {
+        chartOverall.data.datasets[0].data = [cAll.high, cAll.med];
+        chartOverall.update();
+      }
+      if (chartTypes) {
+        const byLabel = new Map();
+        for (const f of all) {
+          const lbl = f.label || 'OTHER';
+          byLabel.set(lbl, (byLabel.get(lbl) || 0) + 1);
+        }
+        const entries = [...byLabel.entries()].sort((a,b)=> b[1]-a[1]);
+        chartTypes.data.labels = entries.map(e=>e[0]);
+        chartTypes.data.datasets[0].data = entries.map(e=>e[1]);
+        chartTypes.update();
+      }
+    }
+
+    function buildCard(item){
+      const t = document.getElementById('tmpl-card').content.cloneNode(true);
+      const card = t.querySelector('.card');
+      const lab = card.querySelector('.label');
+      lab.textContent = item.label;
+      lab.className = 'label ' + (item.confidence >= 0.80 ? 'lab-high' : 'lab-med');
+      card.querySelector('.conf').textContent = `conf ${item.confidence?.toFixed(2) ?? '0.00'}`;
+      card.querySelector('.prev').textContent = (item.original ? `${item.original} → ${item.replacement || ''}` : (item.preview || ''));
+      card.querySelector('.why').textContent = (item.reasoning || []).join(', ');
+
+      const chk = card.querySelector('.chk');
+      chk.dataset.id = item.id;
+      chk.checked = item.confidence >= 0.80;
+      return card;
+    }
+
+    function renderGroupedFindings(payload){
+      renderDebug(payload);
+
+      const all = payload.findings || [];
+      const filtered = applyFilters(all);
+
+      // Summary
+      const total = payload.summary?.total ?? all.length;
+      const hi = (payload.summary?.high_confidence) ?? all.filter(f=>bucket(f.confidence)==='high').length;
+      const med = (payload.summary?.medium_confidence) ?? (total - hi);
+      statsEl.textContent = total ? `Total: ${total} • High: ${hi} • Medium: ${med}` : 'No findings.';
+
+      // Charts
+      updateCharts(payload, filtered);
+
+      const auto = all.filter(x => (x.confidence ?? 0) >= 0.80).length;
+      const chip = document.getElementById('auto-chip');
+      if (chip){
+        if (total) { chip.style.display='inline-flex'; chip.textContent = `Auto-selected: ${auto}`; }
+        else { chip.style.display='none'; }
+      }
+
+      // Grouped rendering
+      const grouped = groupByLabel(filtered);
+      groupsEl.innerHTML = '';
+
+      if (grouped.length === 0){
+        groupsEl.innerHTML = '<div class="hint">No results match your filters.</div>';
+        return;
+      }
+
+      grouped.forEach(([label, list])=>{
+        const {total, high, med} = countsFor(list);
+
+        const item = document.createElement('div');
+        item.className = 'acc-item';
+
+        const head = document.createElement('div');
+        head.className = 'acc-head';
+        head.innerHTML = `
+          <div class="acc-title">${label}</div>
+          <div class="group-actions">
+            <button type="button" class="btn ghost btn-group-all">Select all</button>
+            <button type="button" class="btn ghost btn-group-none">None</button>
+            <button type="button" class="btn ghost btn-toggle">Expand</button>
+          </div>
+          <div class="acc-counts">${total} total • ${high} high • ${med} medium</div>
+        `;
+
+        const body = document.createElement('div');
+        body.className = 'acc-body';
+        list.forEach(f => body.appendChild(buildCard(f)));
+
+        head.querySelector('.btn-toggle').addEventListener('click', ()=>{
+          item.classList.toggle('open');
+        });
+        head.querySelector('.btn-group-all').addEventListener('click', ()=>{
+          body.querySelectorAll('.chk').forEach(ch => ch.checked = true);
+        });
+        head.querySelector('.btn-group-none').addEventListener('click', ()=>{
+          body.querySelectorAll('.chk').forEach(ch => ch.checked = false);
+        });
+
+        item.appendChild(head);
+        item.appendChild(body);
+        groupsEl.appendChild(item);
+      });
+    }
+
+    // Wire filters
+    [fltHigh, fltMed].forEach(el => el.addEventListener('change', ()=>{
+      if (lastPayload) renderGroupedFindings(lastPayload);
+    }));
+    fltQ.addEventListener('input', ()=>{
+      if (lastPayload) renderGroupedFindings(lastPayload);
+    });
+
+    // Original actions
+    $('#btn-scan').addEventListener('click', async () => {
+      const fd = new FormData();
+      if (fileObj) fd.append('file', fileObj);
+      else fd.append('text_input', textEl.value);
+      fd.append('use_ner', useNER.checked ? '1' : '0');
+      fd.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fd.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
+      fd.append('b64_plain', b64Plain.checked ? '1' : '0');
+      fd.append('strict_email', strictEmail.checked ? '1' : '0');
+      if (debugEl.checked) fd.append('debug', '1');
+      const data = await postForm('/scan', fd);
+      lastPayload = data;
+      renderFindings(data);
+      outputEl.textContent = 'Scan complete. Review and accept.';
+
+      // reset selection and blobs on a fresh scan
+      lastSelected = [];
+      lastPreview = '';
+      lastCSVBlob = '';
+      expLink.textContent = '';
+    });
+
+    $('#btn-accept').addEventListener('click', async () => {
+      if (!lastPayload) { outputEl.textContent = 'Scan first.'; return; }
+      const selected = $$('.chk').filter(x => x.checked).map(x => x.dataset.id);
+      lastSelected = selected;
+
+      const fd = new FormData();
+      if (fileObj) fd.append('file', fileObj);
+      else fd.append('text_input', textEl.value);
+      fd.append('findings_json', JSON.stringify(lastPayload));
+      fd.append('mode', mode());
+      fd.append('ip_mode', ipMode());
+      fd.append('use_ner', useNER.checked ? '1' : '0');
+      fd.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fd.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
+      fd.append('b64_plain', b64Plain.checked ? '1' : '0');
+      fd.append('strict_email', strictEmail.checked ? '1' : '0');
+      if (debugEl.checked) fd.append('debug', '1');
+      selected.forEach(id => fd.append('selected_ids', id));
+
+      const data = await postForm('/redact', fd);
+
+      outputEl.textContent = data.redacted || '';
+      lastPreview = data.redacted || '';
+      lastCSVBlob = data.redacted_csv || '';
+
+      refreshExportState();
+    });
+
+    $('#btn-quick').addEventListener('click', async () => {
+      const fd = new FormData();
+      if (fileObj) fd.append('file', fileObj);
+      else fd.append('text_input', textEl.value);
+      fd.append('quick', '1');
+      fd.append('mode', mode());
+      fd.append('ip_mode', ipMode());
+      fd.append('use_ner', useNER.checked ? '1' : '0');
+      fd.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fd.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
+      fd.append('b64_plain', b64Plain.checked ? '1' : '0');
+      fd.append('strict_email', strictEmail.checked ? '1' : '0');
+      if (debugEl.checked) fd.append('debug', '1');
+      const data = await postForm('/redact', fd);
+      outputEl.textContent = data.redacted || '';
+
+      lastPreview = data.redacted || '';
+      lastCSVBlob = data.redacted_csv || '';
+      lastSelected = [];
+
+      refreshExportState();
+    });
+
+    // Combined action: Scan then Quick Redact
+    $('#btn-scan-quick').addEventListener('click', async () => {
+      const fdScan = new FormData();
+      if (fileObj) fdScan.append('file', fileObj);
+      else fdScan.append('text_input', textEl.value);
+      fdScan.append('use_ner', useNER.checked ? '1' : '0');
+      fdScan.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fdScan.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
+      fdScan.append('b64_plain', b64Plain.checked ? '1' : '0');
+      fdScan.append('strict_email', strictEmail.checked ? '1' : '0');
+      if (debugEl.checked) fdScan.append('debug', '1');
+
+      const scanData = await postForm('/scan', fdScan);
+      lastPayload = scanData;
+      renderFindings(scanData);
+
+      const fdQuick = new FormData();
+      if (fileObj) fdQuick.append('file', fileObj);
+      else fdQuick.append('text_input', textEl.value);
+      fdQuick.append('quick', '1');
+      fdQuick.append('mode', mode());
+      fdQuick.append('ip_mode', ipMode());
+      fdQuick.append('use_ner', useNER.checked ? '1' : '0');
+      fdQuick.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fdQuick.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
+      fdQuick.append('b64_plain', b64Plain.checked ? '1' : '0');
+      fdQuick.append('strict_email', strictEmail.checked ? '1' : '0');
+      if (debugEl.checked) fdQuick.append('debug', '1');
+      const red = await postForm('/redact', fdQuick);
+      outputEl.textContent = red.redacted || '';
+
+      lastPreview = red.redacted || '';
+      lastCSVBlob = red.redacted_csv || '';
+      lastSelected = [];
+
+      refreshExportState();
+      document.querySelectorAll('.panel')[2]?.scrollIntoView({behavior:'smooth', block:'start'});
+    });
+
+    $('#btn-export').addEventListener('click', async () => {
+      const fd = new FormData();
+      if (fileObj) fd.append('file', fileObj);
+      else fd.append('text_input', textEl.value);
+
+      const isQuick = (expMode() === 'quick');
+      if (isQuick) {
+        fd.append('quick','1');
+      } else {
+        if (!lastPayload) { expLink.textContent = 'Scan & Accept before Full export.'; return; }
+        fd.append('findings_json', JSON.stringify(lastPayload));
+        lastSelected.forEach(id => fd.append('selected_ids', id));
+
+        if (lastCSVBlob) {
+          fd.append('redacted_csv', lastCSVBlob);
+        } else if ((outputEl.textContent || '').trim()) {
+          fd.append('redacted_blob', outputEl.textContent);
+        }
+      }
+
+      fd.append('mode', mode());
+      fd.append('ip_mode', ipMode());
+      fd.append('use_ner', useNER.checked ? '1' : '0');
+      fd.append('intl_ids', intlIDs.checked ? '1' : '0');
+      fd.append('ignore_headers', ignoreHeaders.checked ? '1' : '0');
+      fd.append('b64_plain', b64Plain.checked ? '1' : '0');
+      fd.append('strict_email', strictEmail.checked ? '1' : '0');
+      if (debugEl.checked) fd.append('debug', '1');
+      // Image options
+      const isImg = fileObj && /\.(jpg|jpeg|png|tif|tiff)$/i.test(fileObj.name);
+      if (isImg) {
+        const chkFaces = document.getElementById('chk-faces');
+        const chkMrz = document.getElementById('chk-mrz');
+        fd.append('redact_faces', chkFaces && chkFaces.checked ? '1' : '0');
+        fd.append('redact_mrz', chkMrz && chkMrz.checked ? '1' : '0');
+      }
+
+      const data = await postForm('/export', fd);
+      expLink.innerHTML = data.download ? `<a class="hint" href="${data.download}">Download redacted file</a>` : (data.error || 'Export failed');
+    });
+
+    // Global select/deselect still works across grouped cards
+    $('#btn-select-all').addEventListener('click', () => { $$('.chk').forEach(ch => ch.checked = true); });
+    $('#btn-select-none').addEventListener('click', () => { $$('.chk').forEach(ch => ch.checked = false); });
+
+    // Override old flat renderer to use grouped UI
+    function renderFindings(payload){
+      // keep debug + summary + auto chip logic inside grouped renderer
+      renderGroupedFindings(payload);
+      // ensure old flat container remains hidden
+      findingsEl.classList.add('hidden');
+    }
+
+    function refreshExportState() {
+      const btn = document.getElementById('btn-export');
+      if (!btn) return;
+      const hasOutput = (outputEl.textContent || '').trim().length > 0;
+      const isImg = fileObj && /\.(jpg|jpeg|png|tif|tiff)$/i.test(fileObj.name || '');
+      // For images, enable export even without text preview
+      btn.disabled = isImg ? false : !hasOutput;
+    }
+    refreshExportState();
+  </script>
+</body>
+</html>

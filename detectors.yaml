@@ -1,0 +1,94 @@
+# Expanded detectors for high-coverage regex detection.
+# NER (PERSON/ORG/GPE) is handled in code when 'use_ner' is enabled.
+
+patterns:
+  # Email (strict): common/public TLDs
+  - label: EMAIL_STRICT
+    base: 0.72
+    regex: (?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.(?:com|org|net|gov|edu|fi|se|no|dk|uk|ie|eu|io|ai|co|biz|info)\b
+
+  # Email (permissive): RFC-like broad
+  - label: EMAIL_PERMISSIVE
+    base: 0.66
+    regex: (?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b
+
+  # IPv4
+  - label: IPV4
+    base: 0.70
+    regex: \b(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\b
+
+  # IPv6 (simplified)
+  - label: IPV6
+    base: 0.70
+    regex: \b(?:[A-F0-9]{1,4}:){7}[A-F0-9]{1,4}\b
+
+  # UUID v1–v5
+  - label: UUID
+    base: 0.65
+    regex: \b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b
+
+  # Credit cards (Luhn checked in code)
+  - label: CREDIT_CARD
+    base: 0.60
+    regex: \b(?:\d[ -]*?){13,19}\b
+
+  # JWT tokens
+  - label: JWT
+    base: 0.70
+    regex: \beyJ[0-9A-Za-z_\-]+\.[0-9A-Za-z_\-]+\.[0-9A-Za-z_\-]+\b
+
+  # AWS Access Key ID
+  - label: AWS_AKID
+    base: 0.75
+    regex: \bAKIA[0-9A-Z]{16}\b
+
+  # Generic base64-ish long token
+  - label: GENERIC_TOKEN
+    base: 0.62
+    regex: \b[A-Za-z0-9_\-]{24,}\b
+
+  # Passport MRZ (TD3/TD1) candidate lines
+  - label: PASSPORT_MRZ
+    base: 0.85
+    regex: (?m)^(?:P<|[A-Z0-9<]{30,44})$
+
+  # IBAN (validated in code if python-stdnum is installed)
+  - label: INTL_IBAN_CAND
+    base: 0.50
+    regex: \b[A-Z]{2}[0-9A-Z]{13,34}\b
+
+  # BIC/SWIFT (validated in code if python-stdnum is installed)
+  - label: INTL_BIC_CAND
+    base: 0.50
+    regex: \b[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?\b
+
+  # VAT (candidate, validated in code if python-stdnum is installed)
+  - label: INTL_VAT_CAND
+    base: 0.45
+    regex: \b[A-Z]{2}[0-9A-Z]{6,12}\b
+
+derived_shapes:
+  # Your existing shapes plus extras
+  - label: DERIVED_KEY
+    base: 0.75
+    regex: \bsk\-[A-Za-z0-9\-_]{11,}\b
+  - label: DERIVED_KEY
+    base: 0.75
+    regex: \b[A-Za-z]{8,3}[-_]+\d{8,10}[A-Za-z]{8,6}\d{8,4}\b
+  - label: DERIVED_KEY
+    base: 0.75
+    regex: \bghp_[A-Za-z0-9]{24,}\b
+  - label: DERIVED_KEY
+    base: 0.75
+    regex: \bxoxb\-[0-9]{10,}\-[0-9]{10,}\-[A-Za-z0-9]{12,}\b
+
+context_hints:
+  credentials:
+    - pattern: (?i)\b(secret|token|apikey|api[_-]?key|authorization|bearer|password|passwd|pwd|client[_-]?secret|private[_-]?key|ssh|rsa|ed25519|jwt)\b
+      weight: 0.25
+  pii:
+    - pattern: (?i)\b(email|e[-_ ]?mail|address|phone|mobile|contact)\b
+      weight: 0.15
+  finance:
+    - pattern: (?i)\b(iban|bic|swift|vat|account|card|pan|cvv|cvc)\b
+      weight: 0.20

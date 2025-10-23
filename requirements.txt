@@ -1,0 +1,14 @@
+flask
+pandas
+openpyxl
+faker
+spacy
+pyyaml
+python-stdnum
+phonenumbers
+ruamel.yaml
+python-docx
+pymupdf
+pytesseract
+Pillow
+opencv-python
