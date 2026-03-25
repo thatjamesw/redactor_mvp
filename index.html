@@ -94,10 +94,10 @@
               <h3>Detection Style</h3>
               <p>These affect how aggressively the scanner interprets text and images.</p>
             </div>
-            <div class="toggle-row">
-              <label class="toggle"><input id="strict-email" type="checkbox" checked /> Strict email matching</label>
-              <label class="toggle"><input id="detect-names" type="checkbox" checked /> Heuristic names and places</label>
-              <label class="toggle"><input id="detect-faces" type="checkbox" checked /> Redact human faces in images</label>
+            <div class="scope-list">
+              <label class="scope-pill"><input id="strict-email" type="checkbox" checked /><span>Strict email matching</span><small>Prefer full email addresses and avoid soft fragments.</small></label>
+              <label class="scope-pill"><input id="detect-names" type="checkbox" checked /><span>Heuristic names and places</span><small>Try to catch person, place, and organisation-like text.</small></label>
+              <label class="scope-pill"><input id="detect-faces" type="checkbox" checked /><span>Redact human faces in images</span><small>Use browser face detection, with a document-photo fallback when needed.</small></label>
             </div>
             <div class="helper-note">Identity document mode uses broader region redaction for passports and IDs.</div>
           </section>
