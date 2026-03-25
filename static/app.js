@@ -18,6 +18,7 @@ const reviewEmpty = document.querySelector("#review-empty");
 const outputEl = document.querySelector("#output");
 const inputStatus = document.querySelector("#input-status");
 const outputStatus = document.querySelector("#output-status");
+const outputRisk = document.querySelector("#output-risk");
 const benchmarkStatus = document.querySelector("#benchmark-status");
 const benchmarkResults = document.querySelector("#benchmark-results");
 const benchmarkBreakdown = document.querySelector("#benchmark-breakdown");
@@ -41,12 +42,18 @@ const metricAuto = document.querySelector("#metric-auto");
 const metricCurrent = document.querySelector("#metric-current");
 const metricLeft = document.querySelector("#metric-left");
 const selectionNote = document.querySelector("#selection-note");
+const imageTools = document.querySelector("#image-tools");
+const manualBoxButton = document.querySelector("#manual-box-button");
+const clearManualBoxesButton = document.querySelector("#clear-manual-boxes-button");
 
 let fileState = null;
 let scanState = null;
 let outputState = null;
 let selectionState = new Set();
 let recommendedSelectionState = new Set();
+let manualDrawMode = false;
+let manualBoxDraft = null;
+let manualBoxCounter = 0;
 
 const presets = {
   llm_safe: {
@@ -55,6 +62,14 @@ const presets = {
     detectFaces: true,
     imageMode: "standard",
     confidence: "high",
+    categories: { pii: true, identity: true, financial: true, network: true, secrets: true },
+  },
+  paranoid: {
+    strictEmail: true,
+    detectNames: true,
+    detectFaces: true,
+    imageMode: "document_safe",
+    confidence: "medium",
     categories: { pii: true, identity: true, financial: true, network: true, secrets: true },
   },
   balanced: {
@@ -115,16 +130,25 @@ function renderSelectionTrust() {
 
   if (!scanState) {
     selectionNote.textContent = "High-confidence findings will be auto-selected after a scan.";
+    outputRisk.textContent = "Run a scan to see whether anything is still outside the current output.";
+    outputRisk.className = "risk-banner";
     return;
   }
   const thresholdLabel = confidenceSelect.value === "medium" ? "high and medium confidence" : "high confidence";
   if (setsEqual(selectionState, recommendedSelectionState)) {
     selectionNote.textContent = `Auto-selection is using ${thresholdLabel}. ${leftCount} finding${leftCount === 1 ? "" : "s"} remain outside the current output.`;
-    return;
+  } else {
+    const added = [...selectionState].filter((id) => !recommendedSelectionState.has(id)).length;
+    const removed = [...recommendedSelectionState].filter((id) => !selectionState.has(id)).length;
+    selectionNote.textContent = `You adjusted the default selection: ${added} added, ${removed} removed. Current output reflects ${currentCount} selected finding${currentCount === 1 ? "" : "s"}.`;
   }
-  const added = [...selectionState].filter((id) => !recommendedSelectionState.has(id)).length;
-  const removed = [...recommendedSelectionState].filter((id) => !selectionState.has(id)).length;
-  selectionNote.textContent = `You adjusted the default selection: ${added} added, ${removed} removed. Current output reflects ${currentCount} selected finding${currentCount === 1 ? "" : "s"}.`;
+  if (leftCount > 0) {
+    outputRisk.textContent = `${leftCount} finding${leftCount === 1 ? "" : "s"} remain outside the current output. Review before copying or exporting if you want the safest possible result.`;
+    outputRisk.className = "risk-banner warn";
+  } else {
+    outputRisk.textContent = "All current findings are included in the output. Copy or export is in a good state.";
+    outputRisk.className = "risk-banner safe";
+  }
 }
 
 function refreshActions() {
@@ -141,6 +165,18 @@ function refreshActions() {
     : (scanState ? "Adjust findings and output will update automatically." : "Run a scan to generate safe output.");
 }
 
+function manualFindings() {
+  return (scanState?.findings || []).filter((finding) => finding.reasoning?.includes("manual_redaction_box"));
+}
+
+function syncImageToolState() {
+  const isImage = Boolean(scanState?.document?.kind === "image" && outputState?.isImage);
+  imageTools.classList.toggle("hidden", !isImage);
+  manualBoxButton.disabled = !isImage;
+  clearManualBoxesButton.disabled = !isImage || manualFindings().length === 0;
+  manualBoxButton.textContent = manualDrawMode ? "Drawing boxes…" : "Draw blackout boxes";
+}
+
 function renderFormatNote(formatInfo, target) {
   target.textContent = formatInfo ? `${formatInfo.label}: ${formatInfo.guarantee}` : "";
 }
@@ -151,6 +187,8 @@ function mimeTypeForFile(name = "") {
   if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "application/yaml;charset=utf-8";
   if (lower.endsWith(".csv")) return "text/csv;charset=utf-8";
   if (lower.endsWith(".tsv")) return "text/tab-separated-values;charset=utf-8";
+  if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
   return "text/plain;charset=utf-8";
 }
 
@@ -186,13 +224,14 @@ function currentOptions() {
   };
 }
 
-function currentDocument() {
+async function currentDocument() {
   const sourceText = fileState?.kind === "text" ? fileState.text : textInput.value;
   const fileName = fileState ? fileState.name : undefined;
   return prepareDocument({ textInput: sourceText, fileName, fileMeta: fileState });
 }
 
 async function readInputFile(file) {
+  const lowerName = (file.name || "").toLowerCase();
   if ((file.type || "").startsWith("image/")) {
     const dataUrl = await new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -208,12 +247,103 @@ async function readInputFile(file) {
     });
     return { kind: "image", name: file.name, dataUrl, mimeType: file.type, size: file.size, ...dimensions };
   }
+  if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+    const arrayBuffer = await file.arrayBuffer();
+    return { kind: "xlsx", name: file.name, arrayBuffer, size: file.size };
+  }
   const text = await file.text();
   return { kind: "text", name: file.name, text, size: file.size };
 }
 
 function selectedIds() {
   return [...selectionState];
+}
+
+function renderImageOverlay() {
+  const overlay = outputEl.querySelector(".output-overlay");
+  const image = outputEl.querySelector("img");
+  if (!(overlay instanceof HTMLElement) || !(image instanceof HTMLImageElement) || scanState?.document?.kind !== "image") return;
+  overlay.innerHTML = "";
+  overlay.classList.toggle("drawing", manualDrawMode);
+
+  const naturalWidth = scanState.document.width || image.naturalWidth || 1;
+  const naturalHeight = scanState.document.height || image.naturalHeight || 1;
+  const displayWidth = image.clientWidth || image.width || 1;
+  const displayHeight = image.clientHeight || image.height || 1;
+
+  for (const finding of manualFindings()) {
+    const box = finding.context?.bbox;
+    if (!box) continue;
+    const element = document.createElement("div");
+    element.className = "manual-box";
+    element.style.left = `${(box.x0 / naturalWidth) * displayWidth}px`;
+    element.style.top = `${(box.y0 / naturalHeight) * displayHeight}px`;
+    element.style.width = `${((box.x1 - box.x0) / naturalWidth) * displayWidth}px`;
+    element.style.height = `${((box.y1 - box.y0) / naturalHeight) * displayHeight}px`;
+    overlay.appendChild(element);
+  }
+
+  if (manualBoxDraft) {
+    const element = document.createElement("div");
+    element.className = "manual-box live";
+    element.style.left = `${manualBoxDraft.left}px`;
+    element.style.top = `${manualBoxDraft.top}px`;
+    element.style.width = `${manualBoxDraft.width}px`;
+    element.style.height = `${manualBoxDraft.height}px`;
+    overlay.appendChild(element);
+  }
+}
+
+function addManualRedactionBox(box) {
+  if (!scanState || scanState.document.kind !== "image") return;
+  manualBoxCounter += 1;
+  const finding = {
+    id: `f-manual-${manualBoxCounter}`,
+    label: "MANUAL_AREA",
+    category: "identity",
+    confidence: 1,
+    start: 0,
+    end: 0,
+    original: "Manual blackout box",
+    reasoning: ["manual_redaction_box"],
+    context: {
+      kind: "image",
+      previewPath: `manual.box_${manualBoxCounter}`,
+      bbox: box,
+    },
+    replacement: "[REDACTED]",
+  };
+  scanState.findings.push(finding);
+  scanState.summary = {
+    total: scanState.findings.length,
+    high: scanState.findings.filter((item) => item.confidence >= 0.8).length,
+    medium: scanState.findings.filter((item) => item.confidence < 0.8).length,
+  };
+  selectionState.add(finding.id);
+  recommendedSelectionState.add(finding.id);
+  renderFindings();
+  renderSelectionTrust();
+  syncImageToolState();
+  refreshOutputFromSelection("Added a manual blackout box.").catch((error) => setStatus(outputStatus, `Refresh failed: ${error.message}`, "error"));
+}
+
+function clearManualRedactionBoxes() {
+  if (!scanState) return;
+  const manualIds = new Set(manualFindings().map((finding) => finding.id));
+  if (!manualIds.size) return;
+  scanState.findings = scanState.findings.filter((finding) => !manualIds.has(finding.id));
+  selectionState = new Set([...selectionState].filter((id) => !manualIds.has(id)));
+  recommendedSelectionState = new Set([...recommendedSelectionState].filter((id) => !manualIds.has(id)));
+  scanState.summary = {
+    total: scanState.findings.length,
+    high: scanState.findings.filter((item) => item.confidence >= 0.8).length,
+    medium: scanState.findings.filter((item) => item.confidence < 0.8).length,
+  };
+  manualBoxDraft = null;
+  renderFindings();
+  renderSelectionTrust();
+  syncImageToolState();
+  refreshOutputFromSelection("Cleared manual blackout boxes.").catch((error) => setStatus(outputStatus, `Refresh failed: ${error.message}`, "error"));
 }
 
 function renderFindings() {
@@ -264,13 +394,15 @@ function updateSelectionFromThreshold() {
 function setOutput(result) {
   outputState = result;
   if (result.isImage && result.imageDataUrl) {
-    outputEl.innerHTML = `<img src="${result.imageDataUrl}" alt="Redacted output preview" />`;
+    outputEl.innerHTML = `<div class="output-canvas"><img src="${result.imageDataUrl}" alt="Redacted output preview" /><div class="output-overlay"></div></div>`;
   } else {
     outputEl.textContent = result.text;
   }
   renderFormatNote(result.formatInfo, outputNote);
   refreshActions();
   renderSelectionTrust();
+  syncImageToolState();
+  renderImageOverlay();
 }
 
 async function refreshOutputFromSelection(statusMessage = "") {
@@ -282,7 +414,9 @@ async function refreshOutputFromSelection(statusMessage = "") {
 }
 
 async function runScan() {
-  const documentModel = currentDocument();
+  const documentModel = await currentDocument();
+  manualDrawMode = false;
+  manualBoxDraft = null;
   if (documentModel.kind === "image") {
     setStatus(inputStatus, "Running OCR locally in your browser. The first image can take a little while.", "warn");
   }
@@ -382,11 +516,13 @@ stickySafeCopyButton.addEventListener("click", async () => {
 
 document.querySelector("#copy-button").addEventListener("click", async () => {
   if (!outputState?.text) return;
-  await copyOutput(outputState.text, "Output copied to your clipboard.");
+  const hasResidualRisk = Boolean(scanState && scanState.findings.length > selectionState.size);
+  await copyOutput(outputState.text, hasResidualRisk ? "Output copied. Some findings still remain outside the current output." : "Output copied to your clipboard.");
 });
 stickyCopyButton.addEventListener("click", async () => {
   if (!outputState?.text) return;
-  await copyOutput(outputState.text, "Output copied to your clipboard.");
+  const hasResidualRisk = Boolean(scanState && scanState.findings.length > selectionState.size);
+  await copyOutput(outputState.text, hasResidualRisk ? "Output copied. Some findings still remain outside the current output." : "Output copied to your clipboard.");
 });
 
 document.querySelector("#download-button").addEventListener("click", () => {
@@ -396,6 +532,10 @@ document.querySelector("#download-button").addEventListener("click", () => {
   let objectUrl = "";
   if (outputState.isImage && outputState.imageDataUrl) {
     link.href = outputState.imageDataUrl;
+  } else if (outputState.binaryData) {
+    const blob = new Blob([outputState.binaryData], { type: outputState.blobType || mimeTypeForFile(downloadName) });
+    objectUrl = URL.createObjectURL(blob);
+    link.href = objectUrl;
   } else {
     const blob = new Blob([outputState.text], { type: mimeTypeForFile(downloadName) });
     objectUrl = URL.createObjectURL(blob);
@@ -404,7 +544,7 @@ document.querySelector("#download-button").addEventListener("click", () => {
   link.download = downloadName;
   link.click();
   if (objectUrl) URL.revokeObjectURL(objectUrl);
-  setStatus(outputStatus, "Redacted file downloaded locally.", "success");
+  setStatus(outputStatus, scanState && scanState.findings.length > selectionState.size ? "File downloaded, but some findings remain outside the current output." : "Redacted file downloaded locally.", scanState && scanState.findings.length > selectionState.size ? "warn" : "success");
 });
 stickyDownloadButton.addEventListener("click", () => {
   if (!outputState) return;
@@ -422,6 +562,8 @@ document.querySelector("#clear-button").addEventListener("click", async () => {
   outputState = null;
   selectionState = new Set();
   recommendedSelectionState = new Set();
+  manualDrawMode = false;
+  manualBoxDraft = null;
   findingsEl.innerHTML = "";
   outputEl.innerHTML = "";
   fileSummary.textContent = "No file selected.";
@@ -441,6 +583,7 @@ document.querySelector("#clear-button").addEventListener("click", async () => {
   setStatus(inputStatus, "Cleared the current session.", "");
   setStatus(outputStatus, "", "");
   setStatus(benchmarkStatus, "", "");
+  syncImageToolState();
 });
 
 document.querySelector("#select-all-button").addEventListener("click", () => {
@@ -507,8 +650,10 @@ fileInput.addEventListener("change", async () => {
   }
   try {
     fileState = await readInputFile(file);
+    manualDrawMode = false;
+    manualBoxDraft = null;
     fileSummary.textContent = `${fileState.name} loaded locally (${Math.round(fileState.size / 1024) || 1} KB). Pasted text is ignored while a file is selected.`;
-    renderFormatNote(currentDocument().formatInfo, formatNote);
+    renderFormatNote((await currentDocument()).formatInfo, formatNote);
     setStatus(inputStatus, "File loaded locally. Click LLM-safe copy for the fastest workflow.", "success");
   } catch (error) {
     fileState = null;
@@ -525,8 +670,10 @@ document.addEventListener("paste", async (event) => {
   event.preventDefault();
   try {
     fileState = await readInputFile(file);
+    manualDrawMode = false;
+    manualBoxDraft = null;
     fileSummary.textContent = `${fileState.name} pasted from clipboard. OCR will run locally in the browser.`;
-    renderFormatNote(currentDocument().formatInfo, formatNote);
+    renderFormatNote((await currentDocument()).formatInfo, formatNote);
     setStatus(inputStatus, "Image pasted from clipboard. Click scan or LLM-safe copy to process it.", "success");
   } catch (error) {
     setStatus(inputStatus, `Could not read pasted image: ${error.message}`, "error");
@@ -535,16 +682,80 @@ document.addEventListener("paste", async (event) => {
 
 textInput.addEventListener("input", () => {
   if (fileState) return;
-  try {
-    renderFormatNote(currentDocument().formatInfo, formatNote);
-  } catch (error) {
+  currentDocument().then((documentModel) => {
+    renderFormatNote(documentModel.formatInfo, formatNote);
+  }).catch(() => {
     formatNote.textContent = "Format recognition will appear here once the input parses cleanly.";
+  });
+});
+
+manualBoxButton.addEventListener("click", () => {
+  if (!scanState || scanState.document.kind !== "image") return;
+  manualDrawMode = !manualDrawMode;
+  manualBoxDraft = null;
+  syncImageToolState();
+  renderImageOverlay();
+  setStatus(outputStatus, manualDrawMode ? "Drag on the image to add blackout boxes." : "Manual blackout mode turned off.", manualDrawMode ? "warn" : "");
+});
+
+clearManualBoxesButton.addEventListener("click", () => {
+  clearManualRedactionBoxes();
+});
+
+outputEl.addEventListener("pointerdown", (event) => {
+  if (!manualDrawMode || !scanState || scanState.document.kind !== "image") return;
+  const overlay = outputEl.querySelector(".output-overlay");
+  if (!(overlay instanceof HTMLElement)) return;
+  const rect = overlay.getBoundingClientRect();
+  manualBoxDraft = {
+    startX: Math.min(Math.max(event.clientX - rect.left, 0), rect.width),
+    startY: Math.min(Math.max(event.clientY - rect.top, 0), rect.height),
+    left: Math.min(Math.max(event.clientX - rect.left, 0), rect.width),
+    top: Math.min(Math.max(event.clientY - rect.top, 0), rect.height),
+    width: 0,
+    height: 0,
+  };
+  renderImageOverlay();
+});
+
+outputEl.addEventListener("pointermove", (event) => {
+  if (!manualDrawMode || !manualBoxDraft) return;
+  const overlay = outputEl.querySelector(".output-overlay");
+  if (!(overlay instanceof HTMLElement)) return;
+  const rect = overlay.getBoundingClientRect();
+  const currentX = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
+  const currentY = Math.min(Math.max(event.clientY - rect.top, 0), rect.height);
+  manualBoxDraft.left = Math.min(manualBoxDraft.startX, currentX);
+  manualBoxDraft.top = Math.min(manualBoxDraft.startY, currentY);
+  manualBoxDraft.width = Math.abs(currentX - manualBoxDraft.startX);
+  manualBoxDraft.height = Math.abs(currentY - manualBoxDraft.startY);
+  renderImageOverlay();
+});
+
+outputEl.addEventListener("pointerup", () => {
+  if (!manualDrawMode || !manualBoxDraft || !scanState || scanState.document.kind !== "image") return;
+  const overlay = outputEl.querySelector(".output-overlay");
+  const image = outputEl.querySelector("img");
+  if (!(overlay instanceof HTMLElement) || !(image instanceof HTMLImageElement)) return;
+  const rect = overlay.getBoundingClientRect();
+  const naturalWidth = scanState.document.width || image.naturalWidth || 1;
+  const naturalHeight = scanState.document.height || image.naturalHeight || 1;
+  if (manualBoxDraft.width >= 12 && manualBoxDraft.height >= 12) {
+    addManualRedactionBox({
+      x0: (manualBoxDraft.left / rect.width) * naturalWidth,
+      y0: (manualBoxDraft.top / rect.height) * naturalHeight,
+      x1: ((manualBoxDraft.left + manualBoxDraft.width) / rect.width) * naturalWidth,
+      y1: ((manualBoxDraft.top + manualBoxDraft.height) / rect.height) * naturalHeight,
+    });
   }
+  manualBoxDraft = null;
+  renderImageOverlay();
 });
 
 refreshActions();
 applyPreset(presetSelect.value);
 renderSelectionTrust();
+syncImageToolState();
 window.addEventListener("beforeunload", () => {
   shutdownImageWorker().catch(() => {});
 });

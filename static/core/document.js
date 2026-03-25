@@ -2,16 +2,19 @@ import { prepareDelimitedDocument, redactDelimitedDocument, scanDelimitedDocumen
 import { prepareImageDocument, redactImageDocument, scanImageDocument } from "./formats/image.js";
 import { prepareJsonDocument, redactJsonDocument, scanJsonDocument } from "./formats/json.js";
 import { prepareTextDocument, redactTextDocument, scanTextDocument } from "./formats/text.js";
+import { prepareXlsxDocument, redactXlsxDocument, scanXlsxDocument } from "./formats/xlsx.js";
 import { prepareYamlDocument, redactYamlDocument, scanYamlDocument } from "./formats/yaml.js";
 
 function looksLikeYaml(text) {
   return /^[\s\S]*:\s[\s\S]*$/m.test(text) && /\n/.test(text);
 }
 
-export function prepareDocument({ textInput, fileName, fileMeta }) {
+export async function prepareDocument({ textInput, fileName, fileMeta }) {
   if (fileMeta?.kind === "image") return prepareImageDocument(fileMeta);
+  if (fileMeta?.kind === "xlsx") return prepareXlsxDocument(fileMeta);
   const rawText = textInput ?? "";
   const lower = (fileName || "").toLowerCase();
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) throw new Error("Use the file uploader for Excel workbooks.");
   if (lower.endsWith(".json")) return prepareJsonDocument(rawText, fileName);
   if (lower.endsWith(".csv")) return prepareDelimitedDocument(rawText, ",", fileName);
   if (lower.endsWith(".tsv")) return prepareDelimitedDocument(rawText, "\t", fileName);
@@ -40,6 +43,7 @@ export async function scanDocument(document, options = {}) {
   if (document.kind === "table") return scanDelimitedDocument(document, options);
   if (document.kind === "json") return scanJsonDocument(document, options);
   if (document.kind === "image") return scanImageDocument(document, options);
+  if (document.kind === "xlsx") return scanXlsxDocument(document, options);
   return { document, findings: [], summary: { total: 0, high: 0, medium: 0 }, preview: "", formatInfo: document.formatInfo };
 }
 
@@ -49,5 +53,6 @@ export async function redactDocument(scanResult, selectedIds, mode = "redact") {
   if (scanResult.document.kind === "table") return redactDelimitedDocument(scanResult, selectedIds, mode);
   if (scanResult.document.kind === "json") return redactJsonDocument(scanResult, selectedIds, mode);
   if (scanResult.document.kind === "image") return redactImageDocument(scanResult, selectedIds);
+  if (scanResult.document.kind === "xlsx") return redactXlsxDocument(scanResult, selectedIds, mode);
   return { text: "", fileName: scanResult.document.name || "redacted.txt", formatInfo: scanResult.formatInfo };
 }

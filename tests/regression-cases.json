@@ -1,0 +1,63 @@
+[
+  {
+    "name": "full international email is redacted in CSV",
+    "fileName": "contacts.csv",
+    "threshold": "medium",
+    "input": "id,name,email,ip_address,credit_card\n1,Wayne Jelk,wjelk1@miibeian.gov.cn,219.115.22.1,3574922401749937\n",
+    "expectPresent": [
+      "[REDACTED],[REDACTED],[REDACTED],[REDACTED]"
+    ],
+    "expectAbsent": [
+      "wjelk1@miibeian.gov.cn",
+      "[REDACTED].cn"
+    ],
+    "minFindings": 4
+  },
+  {
+    "name": "json preserves shape while removing risky values",
+    "fileName": "payload.json",
+    "threshold": "medium",
+    "input": "{\n  \"email\": \"dashcroft1s@biglobe.ne.jp\",\n  \"ip_address\": \"157.83.131.243\",\n  \"credit_card\": \"5893255220888209\"\n}\n",
+    "expectPresent": [
+      "\"email\": \"[REDACTED]\"",
+      "\"ip_address\": \"[REDACTED]\"",
+      "\"credit_card\": \"[REDACTED]\""
+    ],
+    "expectAbsent": [
+      "dashcroft1s@biglobe.ne.jp",
+      "157.83.131.243",
+      "5893255220888209"
+    ],
+    "minFindings": 3
+  },
+  {
+    "name": "yaml redacts secrets and email without partial leftovers",
+    "fileName": "config.yaml",
+    "threshold": "medium",
+    "input": "email: alarwell1o@plala.or.jp\napi_key: sk-test12345678\n",
+    "expectPresent": [
+      "email: [REDACTED]",
+      "api_key: [REDACTED]"
+    ],
+    "expectAbsent": [
+      "alarwell1o@plala.or.jp",
+      "@plala.or.jp",
+      "sk-test12345678"
+    ],
+    "minFindings": 2
+  },
+  {
+    "name": "plain text overlap redaction removes full email",
+    "fileName": "notes.txt",
+    "threshold": "medium",
+    "input": "Contact: beshelby0@t-online.de\n",
+    "expectPresent": [
+      "Contact: [REDACTED]"
+    ],
+    "expectAbsent": [
+      "beshelby0@t-online.de",
+      "[REDACTED].de"
+    ],
+    "minFindings": 1
+  }
+]

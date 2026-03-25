@@ -214,6 +214,47 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .status.warn{color:var(--warning)}
 .status.error{color:var(--danger)}
 .inline-note{color:var(--muted);font-size:13px}
+.trust-banner{
+  display:grid;
+  gap:4px;
+  padding:14px 16px;
+  border:1px solid var(--border);
+  border-radius:18px;
+  background:rgba(255,255,255,.9);
+}
+.trust-banner strong{
+  font-size:.94rem;
+}
+.trust-banner span{
+  color:var(--muted);
+  font-size:13px;
+}
+.risk-banner{
+  padding:13px 15px;
+  border:1px solid var(--border);
+  border-radius:18px;
+  background:rgba(230,230,233,.72);
+  color:var(--muted);
+  font-size:13px;
+}
+.risk-banner.warn{
+  border-color:rgba(122,100,56,.24);
+  background:rgba(242,208,164,.36);
+  color:#5c4a29;
+}
+.risk-banner.safe{
+  border-color:rgba(63,130,109,.22);
+  background:rgba(63,130,109,.09);
+  color:#285646;
+}
+.image-tools{
+  display:grid;
+  gap:10px;
+  padding:14px 16px;
+  border:1px solid var(--border);
+  border-radius:18px;
+  background:rgba(255,255,255,.86);
+}
 .metric{
   border:1px solid var(--border);
   border-radius:22px;
@@ -322,6 +363,7 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none}
 }
 .output{
   min-height:460px;
+  position:relative;
 }
 .review-panel .findings{
   max-height:620px;
@@ -331,6 +373,30 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none}
   max-width:100%;
   height:auto;
   border-radius:12px;
+}
+.output-canvas{
+  position:relative;
+  display:inline-block;
+  max-width:100%;
+}
+.output-overlay{
+  position:absolute;
+  inset:0;
+  border-radius:12px;
+}
+.manual-box{
+  position:absolute;
+  border:2px solid rgba(0,0,0,.72);
+  background:rgba(0,0,0,.16);
+  border-radius:8px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.manual-box.live{
+  border-style:dashed;
+  background:rgba(0,0,0,.1);
+}
+.output-overlay.drawing{
+  cursor:crosshair;
 }
 .mini-results{max-height:260px;overflow:auto}
 .mini-results.empty{color:var(--muted)}
