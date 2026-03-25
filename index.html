@@ -105,14 +105,14 @@
           <section class="config-card">
             <div class="config-head">
               <h3>Detection Scope</h3>
-              <p>Turn categories off when you want fewer false positives. Secrets and network identifiers are the most deterministic.</p>
+              <p>Choose the risk areas you want to scan. Leave everything on for a broad pass, or narrow the scope when you want fewer false positives.</p>
             </div>
-            <div class="category-grid">
-              <label class="category-card"><input class="category-toggle" type="checkbox" data-category="pii" checked /><span>Core PII</span><small>email, phone, SSN, passport, VIN</small></label>
-              <label class="category-card"><input class="category-toggle" type="checkbox" data-category="identity" checked /><span>Identity</span><small>names, places, organisations, street addresses</small></label>
-              <label class="category-card"><input class="category-toggle" type="checkbox" data-category="financial" checked /><span>Financial</span><small>cards and tax IDs</small></label>
-              <label class="category-card"><input class="category-toggle" type="checkbox" data-category="network" checked /><span>Network</span><small>IPs, CIDRs, MAC addresses</small></label>
-              <label class="category-card"><input class="category-toggle" type="checkbox" data-category="secrets" checked /><span>Secrets</span><small>API keys, JWTs, AWS keys, long tokens</small></label>
+            <div class="scope-list">
+              <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="pii" checked /><span>Core PII</span><small>Email, phone, SSN, passport, VIN</small></label>
+              <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="identity" checked /><span>Identity</span><small>Names, places, organisations, street addresses</small></label>
+              <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="financial" checked /><span>Financial</span><small>Cards and tax IDs</small></label>
+              <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="network" checked /><span>Network</span><small>IPs, CIDRs, MAC addresses</small></label>
+              <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="secrets" checked /><span>Secrets</span><small>API keys, JWTs, AWS keys, long tokens</small></label>
             </div>
           </section>
         </div>
@@ -139,7 +139,7 @@
     </section>
 
     <section class="grid">
-      <section class="panel">
+      <section class="panel review-panel">
         <div class="panel-head">
           <div>
             <h2>Step 2 · Review</h2>
@@ -168,7 +168,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel output-panel">
         <div class="panel-head">
           <div>
             <h2>Step 3 · Output</h2>
@@ -189,7 +189,7 @@
           <strong>Coverage Lab</strong>
           <span>Benchmarks and detector tuning live here, outside the main workflow.</span>
         </div>
-        <span class="ghost summary-button">Open benchmark tools</span>
+        <span class="summary-button">Benchmark tools</span>
       </summary>
       <div class="panel-body">
         <div class="button-row">
