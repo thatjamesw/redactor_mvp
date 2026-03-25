@@ -177,6 +177,7 @@ function refreshActions() {
 }
 
 function syncFocusModes() {
+  const wasFocused = document.body.classList.contains("review-expanded") || document.body.classList.contains("output-expanded");
   if (reviewPanel) reviewPanel.classList.toggle("expanded", reviewExpanded);
   if (outputPanel) outputPanel.classList.toggle("expanded", outputExpanded);
   if (workflowGrid) {
@@ -197,6 +198,9 @@ function syncFocusModes() {
     reviewPanel?.scrollIntoView({ block: "start", behavior: "instant" });
   } else if (outputExpanded) {
     outputPanel?.scrollIntoView({ block: "start", behavior: "instant" });
+  } else if (wasFocused) {
+    void document.body.offsetHeight;
+    requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
   }
 }
 
