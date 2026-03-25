@@ -16,6 +16,9 @@ const categoryToggles = [...document.querySelectorAll(".category-toggle")];
 const findingsEl = document.querySelector("#findings");
 const reviewEmpty = document.querySelector("#review-empty");
 const outputEl = document.querySelector("#output");
+const workflowGrid = document.querySelector("#workflow-grid");
+const outputPanel = document.querySelector(".output-panel");
+const outputExpandButton = document.querySelector("#output-expand-button");
 const inputStatus = document.querySelector("#input-status");
 const outputStatus = document.querySelector("#output-status");
 const outputRisk = document.querySelector("#output-risk");
@@ -58,6 +61,7 @@ let manualBoxDraft = null;
 let manualBoxCounter = 0;
 let selectedManualFindingId = null;
 let manualDragState = null;
+let outputExpanded = false;
 
 const presets = {
   llm_safe: {
@@ -167,6 +171,14 @@ function refreshActions() {
   stickySummary.textContent = downloadable
     ? "Current output is ready to copy or export."
     : (scanState ? "Adjust findings and output will update automatically." : "Run a scan to generate safe output.");
+}
+
+function syncOutputExpandState() {
+  outputPanel.classList.toggle("expanded", outputExpanded);
+  workflowGrid.classList.toggle("output-focus", outputExpanded);
+  document.body.classList.toggle("output-expanded", outputExpanded);
+  outputExpandButton.textContent = outputExpanded ? "Collapse output" : "Expand output";
+  outputExpandButton.setAttribute("aria-pressed", outputExpanded ? "true" : "false");
 }
 
 function manualFindings() {
@@ -775,6 +787,18 @@ clearButton.addEventListener("click", () => {
     clearButton.disabled = false;
     setStatus(inputStatus, `Secure wipe failed: ${error.message}`, "error");
   });
+});
+
+outputExpandButton.addEventListener("click", () => {
+  outputExpanded = !outputExpanded;
+  syncOutputExpandState();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && outputExpanded) {
+    outputExpanded = false;
+    syncOutputExpandState();
+  }
 });
 
 document.querySelector("#select-all-button").addEventListener("click", () => {
