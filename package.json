@@ -1,0 +1,14 @@
+{
+  "name": "redactor-mvp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Static browser-based redaction tool for safer LLM workflows.",
+  "license": "MIT",
+  "scripts": {
+    "vendor:ocr": "node ./scripts/vendor-tesseract.mjs"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "tesseract.js": "6.0.1"
+  }
+}
