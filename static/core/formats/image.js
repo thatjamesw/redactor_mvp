@@ -141,6 +141,36 @@ function lineGroups(words) {
   return [...map.values()].map((group) => group.sort((left, right) => (left.word_num ?? left.index) - (right.word_num ?? right.index)));
 }
 
+function parseTsvWords(tsv = "") {
+  const rows = String(tsv).split(/\r?\n/).filter(Boolean);
+  if (!rows.length) return [];
+  const words = [];
+  for (const row of rows) {
+    const columns = row.split("\t");
+    if (columns.length < 12) continue;
+    const level = Number(columns[0]);
+    if (level !== 5) continue;
+    const [,, block_num, par_num, line_num, word_num, left, top, width, height, conf, text] = columns;
+    const value = String(text || "").trim();
+    if (!value) continue;
+    words.push({
+      text: value,
+      confidence: Number(conf),
+      block_num: Number(block_num),
+      par_num: Number(par_num),
+      line_num: Number(line_num),
+      word_num: Number(word_num),
+      bbox: {
+        x0: Number(left),
+        y0: Number(top),
+        x1: Number(left) + Number(width),
+        y1: Number(top) + Number(height),
+      },
+    });
+  }
+  return words;
+}
+
 function buildCandidates(group) {
   const candidates = [];
   for (let start = 0; start < group.length; start += 1) {
@@ -208,8 +238,8 @@ export function prepareImageDocument(fileState) {
 export async function scanImageDocument(document, options = {}) {
   const worker = await ensureWorker();
   const prepared = await buildOcrImageDataUrl(document.dataUrl);
-  const result = await worker.recognize(prepared.dataUrl);
-  const words = (result.data.words || []).filter((word) => {
+  const result = await worker.recognize(prepared.dataUrl, {}, { tsv: true });
+  const words = parseTsvWords(result.data.tsv).filter((word) => {
     const text = String(word.text || "").trim();
     const confidence = Number(word.confidence ?? word.conf ?? 0);
     return text && confidence >= 22 && word.bbox;
