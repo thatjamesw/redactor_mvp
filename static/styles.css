@@ -374,14 +374,33 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none}
   height:auto;
   border-radius:12px;
 }
+.output-pages{
+  display:grid;
+  gap:16px;
+}
 .output-canvas{
   position:relative;
   display:inline-block;
   max-width:100%;
+  width:100%;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,.92);
+  border-radius:18px;
+  padding:14px;
+}
+.page-label{
+  margin:0 0 10px;
+  font-size:12px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--muted);
 }
 .output-overlay{
   position:absolute;
-  inset:0;
+  left:14px;
+  right:14px;
+  top:36px;
+  bottom:14px;
   border-radius:12px;
 }
 .manual-box{

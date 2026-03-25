@@ -13,7 +13,7 @@ Browser-based redaction tool for cleaning sensitive data before sharing it with 
 - Includes a built-in benchmark view so you can track detector coverage over time
 - Includes workflow presets for `LLM-safe`, `Balanced`, `Secrets only`, and `Structured PII`
 - Includes a more conservative `Paranoid redaction` preset
-- Supports manual blackout boxes for image redaction when OCR misses a region
+- Supports manual blackout boxes for image and PDF redaction when detection misses a region
 - Includes a regression runner for overlap and structured-redaction edge cases
 
 ## Security Posture
@@ -37,7 +37,7 @@ The repository now includes:
 - `package.json` for managed OCR dependency tracking
 - `.github/dependabot.yml` for weekly updates to both npm dependencies and GitHub Actions
 
-For browser parsing specifically, Dependabot can keep `tesseract.js`, `@tesseract.js-data/eng`, `exceljs`, and `pdfjs-dist` current. That is much safer and more maintainable than hardcoding third-party CDN scripts in the page.
+For browser parsing specifically, Dependabot can keep `tesseract.js`, `@tesseract.js-data/eng`, `exceljs`, `pdfjs-dist`, and `pdf-lib` current. That is much safer and more maintainable than hardcoding third-party CDN scripts in the page.
 
 ## Supported Inputs
 
@@ -61,13 +61,13 @@ The static build currently supports:
 - `CSV` / `TSV`: row and column shape are preserved, though field quoting may be normalized on export
 - `XLSX`: workbook structure, sheet names, and row/column layout are preserved; untouched formatting stays in place, while redacted cells are safely rewritten as plain values
 - `YAML`: inline scalar values are updated while surrounding formatting is preserved for standard mappings and lists; advanced YAML features such as complex tags, anchors, and block scalar bodies are intentionally left untouched
-- `PDF`: text is extracted locally page by page and exported as cleaned text; this is not visual PDF redaction yet
+- `PDF`: pages are rendered locally, detected regions are covered with black bars, and export produces a flattened redacted PDF
 
 ## Current Gaps
 
 These are not yet part of the static browser build:
 
-- visual PDF redaction / rebuilt redacted PDFs
+- editable native PDF redaction annotations
 - DOCX parsing
 - exact byte-for-byte formatting preservation for every structured format
 
@@ -82,6 +82,7 @@ OCR is now bundled locally for a security-first static deployment. The app loads
 - [static/vendor/exceljs/exceljs.min.js](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/exceljs/exceljs.min.js)
 - [static/vendor/pdfjs/pdf.min.mjs](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/pdfjs/pdf.min.mjs)
 - [static/vendor/pdfjs/pdf.worker.min.mjs](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/pdfjs/pdf.worker.min.mjs)
+- [static/vendor/pdflib/pdf-lib.min.js](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/pdflib/pdf-lib.min.js)
 
 The vendored files are generated from npm dependencies with:
 
@@ -90,7 +91,7 @@ npm install
 npm run vendor:browser-deps
 ```
 
-That script copies the OCR runtime, worker, WebAssembly core files, `eng.traineddata.gz`, the local Excel workbook bundle, and the local PDF parsing bundle from managed dependencies into the static site directory.
+That script copies the OCR runtime, worker, WebAssembly core files, `eng.traineddata.gz`, the local Excel workbook bundle, the local PDF parsing bundle, and the local PDF assembly bundle from managed dependencies into the static site directory.
 
 Current OCR scope:
 
@@ -105,7 +106,7 @@ For high-risk use:
 
 - choose `Paranoid redaction`
 - review the residual-risk banner before copy/export
-- for images, add manual blackout boxes if OCR misses a face, signature, or region
+- for images or PDFs, add manual blackout boxes if detection misses a face, signature, field, or region
 
 The output panel now warns when findings remain outside the current output, so the app makes residual risk more visible before handoff.
 

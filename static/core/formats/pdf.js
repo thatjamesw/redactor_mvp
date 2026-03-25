@@ -5,8 +5,10 @@ import { scanTextValue } from "../detectors.js";
 const PDF_SCRIPT_URL = new URL("../../vendor/pdfjs/pdf.min.mjs", import.meta.url);
 const PDF_WORKER_URL = new URL("../../vendor/pdfjs/pdf.worker.min.mjs", import.meta.url);
 const PDF_STANDARD_FONT_URL = new URL("../../vendor/pdfjs/standard_fonts/", import.meta.url);
+const PDFLIB_SCRIPT_PATH = "./static/vendor/pdflib/pdf-lib.min.js";
 
 let pdfPromise = null;
+let pdfLibPromise = null;
 
 function cloneArrayBuffer(buffer) {
   return buffer.slice(0);
@@ -26,33 +28,170 @@ async function ensurePdfJs() {
   return pdfPromise;
 }
 
-function normalisePageLines(items) {
+async function ensurePdfLib() {
+  if (pdfLibPromise) return pdfLibPromise;
+  pdfLibPromise = (async () => {
+    if (typeof document === "undefined") return import("pdf-lib");
+    if (globalThis.PDFLib?.PDFDocument) return globalThis.PDFLib;
+
+    const prior = document.querySelector(`script[data-vendor-bundle="pdflib"]`);
+    if (prior) {
+      await new Promise((resolve) => {
+        if (globalThis.PDFLib?.PDFDocument) resolve();
+        else prior.addEventListener("load", () => resolve(), { once: true });
+        prior.addEventListener("error", () => resolve(), { once: true });
+      });
+    } else {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = PDFLIB_SCRIPT_PATH;
+        script.async = true;
+        script.dataset.vendorBundle = "pdflib";
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Local PDF-Lib bundle not found at static/vendor/pdflib/pdf-lib.min.js."));
+        document.head.appendChild(script);
+      });
+    }
+
+    if (!globalThis.PDFLib?.PDFDocument) throw new Error("Local PDF-Lib bundle is missing or incomplete.");
+    return globalThis.PDFLib;
+  })();
+  return pdfLibPromise;
+}
+
+function unionBox(boxes) {
+  return boxes.reduce(
+    (acc, box) => ({
+      x0: Math.min(acc.x0, box.x0),
+      y0: Math.min(acc.y0, box.y0),
+      x1: Math.max(acc.x1, box.x1),
+      y1: Math.max(acc.y1, box.y1),
+    }),
+    { x0: Number.POSITIVE_INFINITY, y0: Number.POSITIVE_INFINITY, x1: 0, y1: 0 }
+  );
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function normaliseBox(box, width, height, padding = 0) {
+  return {
+    x0: clamp(box.x0 - padding, 0, width),
+    y0: clamp(box.y0 - padding, 0, height),
+    x1: clamp(box.x1 + padding, 0, width),
+    y1: clamp(box.y1 + padding, 0, height),
+  };
+}
+
+function buildCandidates(group) {
+  const candidates = [];
+  for (let start = 0; start < group.length; start += 1) {
+    let text = "";
+    const positions = [];
+    for (let end = start; end < Math.min(group.length, start + 12); end += 1) {
+      const prefix = text ? " " : "";
+      const from = text.length + prefix.length;
+      text += `${prefix}${group[end].text}`;
+      positions.push({ from, to: from + group[end].text.length, item: group[end] });
+      candidates.push({ text, positions: [...positions], items: group.slice(start, end + 1) });
+    }
+  }
+  return candidates;
+}
+
+function groupPageItems(items = []) {
   const rows = [];
   for (const item of items) {
-    const value = String(item.str || "").trim();
-    if (!value) continue;
-    const y = Math.round((item.transform?.[5] || 0) * 10) / 10;
-    const x = item.transform?.[4] || 0;
-    let row = rows.find((entry) => Math.abs(entry.y - y) < 3);
+    const text = String(item.text || "").trim();
+    if (!text) continue;
+    let row = rows.find((entry) => Math.abs(entry.y - item.bbox.y0) < 3);
     if (!row) {
-      row = { y, items: [] };
+      row = { y: item.bbox.y0, items: [] };
       rows.push(row);
     }
-    row.items.push({ x, value });
+    row.items.push(item);
   }
   return rows
-    .sort((left, right) => right.y - left.y)
-    .map((row) => row.items.sort((left, right) => left.x - right.x).map((item) => item.value).join(" ").replace(/\s+/g, " ").trim())
-    .filter(Boolean);
+    .sort((left, right) => left.y - right.y)
+    .map((row) => row.items.sort((left, right) => left.bbox.x0 - right.bbox.x0));
 }
 
-function joinPages(pages) {
-  return pages.map((page) => `[Page ${page.pageNumber}]\n${page.text}`.trim()).join("\n\n");
+function extractPdfItems(textContent, viewport) {
+  return (textContent.items || []).map((item) => {
+    const text = String(item.str || "");
+    const width = Math.max(1, Number(item.width || 0));
+    const height = Math.max(8, Number(item.height || Math.abs(item.transform?.[0] || 0) || 12));
+    const x = Number(item.transform?.[4] || 0);
+    const y = Number(item.transform?.[5] || 0);
+    const y0 = viewport.height - y - height;
+    return {
+      text,
+      bbox: {
+        x0: x,
+        y0,
+        x1: x + width,
+        y1: y0 + height,
+      },
+    };
+  }).filter((item) => item.text.trim());
 }
 
-export async function preparePdfDocument(fileState) {
+function pagePreviewText(lines) {
+  return lines.map((line) => line.map((item) => item.text).join(" ").replace(/\s+/g, " ").trim()).filter(Boolean).join("\n");
+}
+
+function pageFindings(page, options = {}) {
+  const findings = [];
+  page.lines.forEach((group) => {
+    const lineText = group.map((item) => item.text).join(" ").replace(/\s+/g, " ").trim();
+    if (!lineText) return;
+    for (const candidate of buildCandidates(group)) {
+      const matches = scanTextValue(candidate.text, options, {
+        kind: "pdf",
+        pageNumber: page.pageNumber,
+        previewPath: `Page ${page.pageNumber}`,
+      });
+      for (const match of matches) {
+        const overlapping = candidate.positions.filter((position) => !(match.end <= position.from || match.start >= position.to));
+        if (!overlapping.length) continue;
+        const box = unionBox(overlapping.map((position) => position.item.bbox));
+        findings.push({
+          label: match.label,
+          category: match.category,
+          confidence: match.confidence,
+          start: match.start,
+          end: match.end,
+          original: candidate.text.slice(match.start, match.end),
+          reasoning: [...match.reasoning, "pdf_bbox_map"],
+          context: {
+            ...match.context,
+            kind: "pdf",
+            pageNumber: page.pageNumber,
+            previewPath: `Page ${page.pageNumber}`,
+            bbox: normaliseBox(box, page.width, page.height, 2),
+          },
+        });
+      }
+    }
+  });
+
+  const deduped = new Map();
+  for (const finding of findings) {
+    const box = finding.context?.bbox;
+    const key = `${finding.label}:${finding.original}:${finding.context?.pageNumber}:${box?.x0}:${box?.y0}:${box?.x1}:${box?.y1}`;
+    if (!deduped.has(key) || deduped.get(key).confidence < finding.confidence) deduped.set(key, finding);
+  }
+  return [...deduped.values()];
+}
+
+function joinPages(pages, key = "text") {
+  return pages.map((page) => `[Page ${page.pageNumber}]\n${page[key]}`.trim()).join("\n\n");
+}
+
+async function loadPdfDocument(sourceBytes) {
   const pdfjs = await ensurePdfJs();
-  const bytes = new Uint8Array(cloneArrayBuffer(fileState.arrayBuffer));
+  const bytes = new Uint8Array(cloneArrayBuffer(sourceBytes));
   const loadingTask = pdfjs.getDocument({
     data: bytes,
     useWorkerFetch: false,
@@ -62,38 +201,99 @@ export async function preparePdfDocument(fileState) {
       ? new URL("../../vendor/pdfjs/standard_fonts/", import.meta.url).pathname
       : PDF_STANDARD_FONT_URL.href,
   });
-  const pdf = await loadingTask.promise;
+  return loadingTask.promise;
+}
+
+async function renderRedactedPages(scanResult, selected) {
+  const pdf = await loadPdfDocument(scanResult.document.sourceBytes);
+  const pages = [];
+  for (const pageMeta of scanResult.document.pages) {
+    const page = await pdf.getPage(pageMeta.pageNumber);
+    const scale = 1.6;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const context = canvas.getContext("2d");
+    await page.render({ canvasContext: context, viewport }).promise;
+
+    const findings = scanResult.findings.filter((finding) => selected.has(finding.id) && finding.context?.pageNumber === pageMeta.pageNumber);
+    context.fillStyle = "#000";
+    for (const finding of findings) {
+      const box = finding.context?.bbox;
+      if (!box) continue;
+      context.fillRect(
+        box.x0 * scale,
+        box.y0 * scale,
+        Math.max(8, (box.x1 - box.x0) * scale),
+        Math.max(8, (box.y1 - box.y0) * scale)
+      );
+    }
+
+    pages.push({
+      pageNumber: pageMeta.pageNumber,
+      width: pageMeta.width,
+      height: pageMeta.height,
+      previewWidth: canvas.width,
+      previewHeight: canvas.height,
+      dataUrl: canvas.toDataURL("image/png"),
+    });
+  }
+  return pages;
+}
+
+function dataUrlToUint8Array(dataUrl) {
+  const base64 = dataUrl.split(",")[1] || "";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+async function buildPdfBinary(pages) {
+  const PDFLib = await ensurePdfLib();
+  const pdfDoc = await PDFLib.PDFDocument.create();
+  for (const page of pages) {
+    const image = await pdfDoc.embedPng(dataUrlToUint8Array(page.dataUrl));
+    const pdfPage = pdfDoc.addPage([page.width, page.height]);
+    pdfPage.drawImage(image, { x: 0, y: 0, width: page.width, height: page.height });
+  }
+  return pdfDoc.save();
+}
+
+export async function preparePdfDocument(fileState) {
+  const pdf = await loadPdfDocument(fileState.arrayBuffer);
   const pages = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 1 });
     const textContent = await page.getTextContent();
-    const lines = normalisePageLines(textContent.items || []);
+    const items = extractPdfItems(textContent, viewport);
+    const lines = groupPageItems(items);
     pages.push({
       pageNumber,
-      text: lines.join("\n"),
+      width: viewport.width,
+      height: viewport.height,
+      items,
+      lines,
+      text: pagePreviewText(lines),
     });
   }
   return {
     kind: "pdf",
     name: fileState.name || "document.pdf",
+    sourceBytes: cloneArrayBuffer(fileState.arrayBuffer),
     pages,
     extractedText: joinPages(pages),
     formatInfo: {
-      label: "PDF (text extraction)",
-      guarantee: "Text is extracted locally page by page. Output is safe redacted text export, not a visually rebuilt PDF.",
+      label: "PDF (visual redaction)",
+      guarantee: "Pages are rendered locally and sensitive regions are covered with black bars. Export creates a flattened redacted PDF.",
     },
   };
 }
 
 export function scanPdfDocument(document, options = {}) {
-  const findings = [];
-  document.pages.forEach((page) => {
-    findings.push(...scanTextValue(page.text, options, {
-      kind: "pdf",
-      pageNumber: page.pageNumber,
-      previewPath: `Page ${page.pageNumber}`,
-    }));
-  });
+  const findings = document.pages.flatMap((page) => pageFindings(page, options));
   const annotated = annotateFindings(findings);
   return {
     document,
@@ -104,18 +304,34 @@ export function scanPdfDocument(document, options = {}) {
   };
 }
 
-export function redactPdfDocument(scanResult, selectedIds, mode) {
+export async function redactPdfDocument(scanResult, selectedIds, mode) {
   const selected = new Set(selectedIds);
   const pages = scanResult.document.pages.map((page) => {
     const matches = scanResult.findings.filter((finding) => selected.has(finding.id) && finding.context?.pageNumber === page.pageNumber);
     return {
       ...page,
-      text: applyTextReplacements(page.text, matches, selected, mode),
+      redactedText: applyTextReplacements(page.text, matches, selected, mode),
     };
   });
+
+  if (typeof document === "undefined") {
+    return {
+      text: joinPages(pages, "redactedText"),
+      fileName: scanResult.document.name.replace(/\.pdf$/i, "") + "-redacted.txt",
+      formatInfo: scanResult.formatInfo,
+    };
+  }
+
+  const visualPages = await renderRedactedPages(scanResult, selected);
+  const binaryData = await buildPdfBinary(visualPages);
   return {
-    text: joinPages(pages),
-    fileName: scanResult.document.name.replace(/\.pdf$/i, "") + "-redacted.txt",
+    text: "Redacted PDF ready. Review the page previews or export the flattened PDF.",
+    fileName: scanResult.document.name.replace(/\.pdf$/i, "") + "-redacted.pdf",
     formatInfo: scanResult.formatInfo,
+    copyable: false,
+    isPdf: true,
+    pdfPages: visualPages,
+    binaryData,
+    blobType: "application/pdf",
   };
 }

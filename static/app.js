@@ -170,10 +170,13 @@ function manualFindings() {
 }
 
 function syncImageToolState() {
-  const isImage = Boolean(scanState?.document?.kind === "image" && outputState?.isImage);
-  imageTools.classList.toggle("hidden", !isImage);
-  manualBoxButton.disabled = !isImage;
-  clearManualBoxesButton.disabled = !isImage || manualFindings().length === 0;
+  const visualDocument = Boolean(
+    (scanState?.document?.kind === "image" && outputState?.isImage)
+    || (scanState?.document?.kind === "pdf" && outputState?.isPdf)
+  );
+  imageTools.classList.toggle("hidden", !visualDocument);
+  manualBoxButton.disabled = !visualDocument;
+  clearManualBoxesButton.disabled = !visualDocument || manualFindings().length === 0;
   manualBoxButton.textContent = manualDrawMode ? "Drawing boxes…" : "Draw blackout boxes";
 }
 
@@ -289,43 +292,53 @@ function selectedIds() {
   return [...selectionState];
 }
 
-function renderImageOverlay() {
-  const overlay = outputEl.querySelector(".output-overlay");
-  const image = outputEl.querySelector("img");
-  if (!(overlay instanceof HTMLElement) || !(image instanceof HTMLImageElement) || scanState?.document?.kind !== "image") return;
-  overlay.innerHTML = "";
-  overlay.classList.toggle("drawing", manualDrawMode);
+function renderVisualOverlays() {
+  const overlays = [...outputEl.querySelectorAll(".output-overlay")];
+  if (!overlays.length || !scanState) return;
 
-  const naturalWidth = scanState.document.width || image.naturalWidth || 1;
-  const naturalHeight = scanState.document.height || image.naturalHeight || 1;
-  const displayWidth = image.clientWidth || image.width || 1;
-  const displayHeight = image.clientHeight || image.height || 1;
+  overlays.forEach((overlay) => {
+    if (!(overlay instanceof HTMLElement)) return;
+    const pageNumber = Number(overlay.dataset.pageNumber || "1");
+    const image = overlay.parentElement?.querySelector("img");
+    if (!(image instanceof HTMLImageElement)) return;
+    overlay.innerHTML = "";
+    overlay.classList.toggle("drawing", manualDrawMode);
 
-  for (const finding of manualFindings()) {
-    const box = finding.context?.bbox;
-    if (!box) continue;
-    const element = document.createElement("div");
-    element.className = "manual-box";
-    element.style.left = `${(box.x0 / naturalWidth) * displayWidth}px`;
-    element.style.top = `${(box.y0 / naturalHeight) * displayHeight}px`;
-    element.style.width = `${((box.x1 - box.x0) / naturalWidth) * displayWidth}px`;
-    element.style.height = `${((box.y1 - box.y0) / naturalHeight) * displayHeight}px`;
-    overlay.appendChild(element);
-  }
+    const pageInfo = scanState.document.kind === "pdf"
+      ? scanState.document.pages.find((page) => page.pageNumber === pageNumber)
+      : { width: scanState.document.width, height: scanState.document.height };
+    const naturalWidth = pageInfo?.width || image.naturalWidth || 1;
+    const naturalHeight = pageInfo?.height || image.naturalHeight || 1;
+    const displayWidth = image.clientWidth || image.width || 1;
+    const displayHeight = image.clientHeight || image.height || 1;
 
-  if (manualBoxDraft) {
-    const element = document.createElement("div");
-    element.className = "manual-box live";
-    element.style.left = `${manualBoxDraft.left}px`;
-    element.style.top = `${manualBoxDraft.top}px`;
-    element.style.width = `${manualBoxDraft.width}px`;
-    element.style.height = `${manualBoxDraft.height}px`;
-    overlay.appendChild(element);
-  }
+    for (const finding of manualFindings()) {
+      const box = finding.context?.bbox;
+      if (!box) continue;
+      if ((finding.context?.pageNumber || 1) !== pageNumber) continue;
+      const element = document.createElement("div");
+      element.className = "manual-box";
+      element.style.left = `${(box.x0 / naturalWidth) * displayWidth}px`;
+      element.style.top = `${(box.y0 / naturalHeight) * displayHeight}px`;
+      element.style.width = `${((box.x1 - box.x0) / naturalWidth) * displayWidth}px`;
+      element.style.height = `${((box.y1 - box.y0) / naturalHeight) * displayHeight}px`;
+      overlay.appendChild(element);
+    }
+
+    if (manualBoxDraft && manualBoxDraft.pageNumber === pageNumber) {
+      const element = document.createElement("div");
+      element.className = "manual-box live";
+      element.style.left = `${manualBoxDraft.left}px`;
+      element.style.top = `${manualBoxDraft.top}px`;
+      element.style.width = `${manualBoxDraft.width}px`;
+      element.style.height = `${manualBoxDraft.height}px`;
+      overlay.appendChild(element);
+    }
+  });
 }
 
-function addManualRedactionBox(box) {
-  if (!scanState || scanState.document.kind !== "image") return;
+function addManualRedactionBox(box, pageNumber = 1) {
+  if (!scanState || !["image", "pdf"].includes(scanState.document.kind)) return;
   manualBoxCounter += 1;
   const finding = {
     id: `f-manual-${manualBoxCounter}`,
@@ -337,8 +350,9 @@ function addManualRedactionBox(box) {
     original: "Manual blackout box",
     reasoning: ["manual_redaction_box"],
     context: {
-      kind: "image",
-      previewPath: `manual.box_${manualBoxCounter}`,
+      kind: scanState.document.kind,
+      pageNumber,
+      previewPath: scanState.document.kind === "pdf" ? `Page ${pageNumber}.manual_box_${manualBoxCounter}` : `manual.box_${manualBoxCounter}`,
       bbox: box,
     },
     replacement: "[REDACTED]",
@@ -424,15 +438,25 @@ function updateSelectionFromThreshold() {
 function setOutput(result) {
   outputState = result;
   if (result.isImage && result.imageDataUrl) {
-    outputEl.innerHTML = `<div class="output-canvas"><img src="${result.imageDataUrl}" alt="Redacted output preview" /><div class="output-overlay"></div></div>`;
+    outputEl.innerHTML = `<div class="output-canvas"><img src="${result.imageDataUrl}" alt="Redacted output preview" /><div class="output-overlay" data-page-number="1"></div></div>`;
+  } else if (result.isPdf && Array.isArray(result.pdfPages)) {
+    outputEl.innerHTML = `<div class="output-pages">${result.pdfPages.map((page) => `
+      <div class="output-canvas pdf-page">
+        <div class="page-label">Page ${page.pageNumber}</div>
+        <img src="${page.dataUrl}" alt="Redacted PDF page ${page.pageNumber}" />
+        <div class="output-overlay" data-page-number="${page.pageNumber}"></div>
+      </div>`).join("")}</div>`;
   } else {
     outputEl.textContent = result.text;
   }
+  outputEl.querySelectorAll("img").forEach((image) => {
+    image.addEventListener("load", () => renderVisualOverlays(), { once: true });
+  });
   renderFormatNote(result.formatInfo, outputNote);
   refreshActions();
   renderSelectionTrust();
   syncImageToolState();
-  renderImageOverlay();
+  renderVisualOverlays();
 }
 
 async function refreshOutputFromSelection(statusMessage = "") {
@@ -449,6 +473,8 @@ async function runScan() {
   manualBoxDraft = null;
   if (documentModel.kind === "image") {
     setStatus(inputStatus, "Running OCR locally in your browser. The first image can take a little while.", "warn");
+  } else if (documentModel.kind === "pdf") {
+    setStatus(inputStatus, "Rendering and scanning PDF pages locally in your browser.", "warn");
   }
   scanState = await scanDocument(documentModel, currentOptions());
   updateSelectionFromThreshold();
@@ -524,7 +550,9 @@ document.querySelector("#safe-copy-button").addEventListener("click", async () =
     if (result?.copyable !== false && result?.text) {
       await copyOutput(result.text, "LLM-safe output copied to your clipboard.");
     } else {
-      setStatus(outputStatus, "Image redaction ready. Use export to save the black-boxed image.", "success");
+      setStatus(outputStatus, scanState?.document?.kind === "pdf"
+        ? "PDF redaction ready. Use export to save the black-barred PDF."
+        : "Image redaction ready. Use export to save the black-boxed image.", "success");
     }
   } catch (error) {
     setStatus(outputStatus, `LLM-safe copy failed: ${error.message}`, "error");
@@ -537,7 +565,9 @@ stickySafeCopyButton.addEventListener("click", async () => {
     if (result?.copyable !== false && result?.text) {
       await copyOutput(result.text, "LLM-safe output copied to your clipboard.");
     } else {
-      setStatus(outputStatus, "Image redaction ready. Use export to save the black-boxed image.", "success");
+      setStatus(outputStatus, scanState?.document?.kind === "pdf"
+        ? "PDF redaction ready. Use export to save the black-barred PDF."
+        : "Image redaction ready. Use export to save the black-boxed image.", "success");
     }
   } catch (error) {
     setStatus(outputStatus, `LLM-safe copy failed: ${error.message}`, "error");
@@ -720,12 +750,12 @@ textInput.addEventListener("input", () => {
 });
 
 manualBoxButton.addEventListener("click", () => {
-  if (!scanState || scanState.document.kind !== "image") return;
+  if (!scanState || !["image", "pdf"].includes(scanState.document.kind)) return;
   manualDrawMode = !manualDrawMode;
   manualBoxDraft = null;
   syncImageToolState();
-  renderImageOverlay();
-  setStatus(outputStatus, manualDrawMode ? "Drag on the image to add blackout boxes." : "Manual blackout mode turned off.", manualDrawMode ? "warn" : "");
+  renderVisualOverlays();
+  setStatus(outputStatus, manualDrawMode ? "Drag on the page preview to add blackout boxes." : "Manual blackout mode turned off.", manualDrawMode ? "warn" : "");
 });
 
 clearManualBoxesButton.addEventListener("click", () => {
@@ -733,11 +763,12 @@ clearManualBoxesButton.addEventListener("click", () => {
 });
 
 outputEl.addEventListener("pointerdown", (event) => {
-  if (!manualDrawMode || !scanState || scanState.document.kind !== "image") return;
-  const overlay = outputEl.querySelector(".output-overlay");
+  if (!manualDrawMode || !scanState || !["image", "pdf"].includes(scanState.document.kind)) return;
+  const overlay = event.target instanceof Element ? event.target.closest(".output-overlay") : null;
   if (!(overlay instanceof HTMLElement)) return;
   const rect = overlay.getBoundingClientRect();
   manualBoxDraft = {
+    pageNumber: Number(overlay.dataset.pageNumber || "1"),
     startX: Math.min(Math.max(event.clientX - rect.left, 0), rect.width),
     startY: Math.min(Math.max(event.clientY - rect.top, 0), rect.height),
     left: Math.min(Math.max(event.clientX - rect.left, 0), rect.width),
@@ -745,12 +776,12 @@ outputEl.addEventListener("pointerdown", (event) => {
     width: 0,
     height: 0,
   };
-  renderImageOverlay();
+  renderVisualOverlays();
 });
 
 outputEl.addEventListener("pointermove", (event) => {
   if (!manualDrawMode || !manualBoxDraft) return;
-  const overlay = outputEl.querySelector(".output-overlay");
+  const overlay = outputEl.querySelector(`.output-overlay[data-page-number="${manualBoxDraft.pageNumber}"]`);
   if (!(overlay instanceof HTMLElement)) return;
   const rect = overlay.getBoundingClientRect();
   const currentX = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
@@ -759,27 +790,30 @@ outputEl.addEventListener("pointermove", (event) => {
   manualBoxDraft.top = Math.min(manualBoxDraft.startY, currentY);
   manualBoxDraft.width = Math.abs(currentX - manualBoxDraft.startX);
   manualBoxDraft.height = Math.abs(currentY - manualBoxDraft.startY);
-  renderImageOverlay();
+  renderVisualOverlays();
 });
 
 outputEl.addEventListener("pointerup", () => {
-  if (!manualDrawMode || !manualBoxDraft || !scanState || scanState.document.kind !== "image") return;
-  const overlay = outputEl.querySelector(".output-overlay");
-  const image = outputEl.querySelector("img");
+  if (!manualDrawMode || !manualBoxDraft || !scanState || !["image", "pdf"].includes(scanState.document.kind)) return;
+  const overlay = outputEl.querySelector(`.output-overlay[data-page-number="${manualBoxDraft.pageNumber}"]`);
+  const image = overlay?.parentElement?.querySelector("img");
   if (!(overlay instanceof HTMLElement) || !(image instanceof HTMLImageElement)) return;
   const rect = overlay.getBoundingClientRect();
-  const naturalWidth = scanState.document.width || image.naturalWidth || 1;
-  const naturalHeight = scanState.document.height || image.naturalHeight || 1;
+  const pageInfo = scanState.document.kind === "pdf"
+    ? scanState.document.pages.find((page) => page.pageNumber === manualBoxDraft.pageNumber)
+    : { width: scanState.document.width, height: scanState.document.height };
+  const naturalWidth = pageInfo?.width || image.naturalWidth || 1;
+  const naturalHeight = pageInfo?.height || image.naturalHeight || 1;
   if (manualBoxDraft.width >= 12 && manualBoxDraft.height >= 12) {
     addManualRedactionBox({
       x0: (manualBoxDraft.left / rect.width) * naturalWidth,
       y0: (manualBoxDraft.top / rect.height) * naturalHeight,
       x1: ((manualBoxDraft.left + manualBoxDraft.width) / rect.width) * naturalWidth,
       y1: ((manualBoxDraft.top + manualBoxDraft.height) / rect.height) * naturalHeight,
-    });
+    }, manualBoxDraft.pageNumber);
   }
   manualBoxDraft = null;
-  renderImageOverlay();
+  renderVisualOverlays();
 });
 
 refreshActions();
