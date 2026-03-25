@@ -15,7 +15,7 @@ function luhnOk(value) {
   return sum % 10 === 0;
 }
 
-const EMAIL_STRICT = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.(?:com|org|net|gov|edu|fi|se|no|dk|uk|ie|eu|io|ai|co|biz|info)\b/g;
+const EMAIL_STRICT = /\b[A-Za-z0-9._%+\-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,63}\b/g;
 const EMAIL_LOOSE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,63}\b/g;
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 const IPV4 = /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\b/g;
@@ -46,6 +46,7 @@ const NAME_KEY = /(?:^|[_\-. ])(?:name|full name|full_name|first name|last name|
 const PLACE_KEY = /(?:^|[_\-. ])(?:city|town|location|country|region|address)$/i;
 const ORG_KEY = /(?:^|[_\-. ])(?:company|organisation|organization|employer|business|tenant)$/i;
 const PHONE_KEY = /(?:^|[_\-. ])(?:phone|telephone|mobile|cell|fax|contact number)$/i;
+const EMAIL_KEY = /(?:^|[_\-. ])(?:email|email address|email_address|e-mail|mail)$/i;
 const SSN_KEY = /(?:^|[_\-. ])(?:ssn|social security|social_security|tax id|tin|itin|ein)$/i;
 const PASSPORT_KEY = /(?:^|[_\-. ])(?:passport|passport number|passport_no|passport_number)$/i;
 const LICENSE_KEY = /(?:^|[_\-. ])(?:driver|drivers license|driver_license|license number|licence number)$/i;
@@ -96,7 +97,11 @@ export function scanTextValue(text, options = {}, context = {}) {
   const findings = [];
   const content = String(text ?? "");
 
-  if (categoryEnabled(options, "EMAIL")) scanMatches(content, options.strictEmail ? EMAIL_STRICT : EMAIL_LOOSE, "EMAIL", options.strictEmail ? 0.91 : 0.82, findings, context);
+  if (categoryEnabled(options, "EMAIL")) {
+    const emailRegex = EMAIL_KEY.test(context.keyHint || "") ? EMAIL_LOOSE : (options.strictEmail ? EMAIL_STRICT : EMAIL_LOOSE);
+    const emailConfidence = EMAIL_KEY.test(context.keyHint || "") ? 0.97 : (options.strictEmail ? 0.91 : 0.82);
+    scanMatches(content, emailRegex, "EMAIL", emailConfidence, findings, context);
+  }
   if (categoryEnabled(options, "API_KEY")) scanMatches(content, API_KEY, "API_KEY", 0.96, findings, context);
   if (categoryEnabled(options, "AWS_ACCESS_KEY")) scanMatches(content, AWS_AKID, "AWS_ACCESS_KEY", 0.95, findings, context);
   if (categoryEnabled(options, "JWT")) scanMatches(content, JWT, "JWT", 0.92, findings, context);
@@ -203,6 +208,8 @@ export function scanTextValue(text, options = {}, context = {}) {
     if (trimmed) {
       if (categoryEnabled(options, "PERSON") && NAME_KEY.test(context.keyHint) && /^[A-Za-z][A-Za-z ,.'-]{1,60}$/.test(trimmed)) {
         addFinding(findings, "PERSON", 0.77, 0, content.length, content, ["field_hint:name"], context);
+      } else if (categoryEnabled(options, "EMAIL") && EMAIL_KEY.test(context.keyHint) && /^[A-Za-z0-9._%+\-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,63}$/.test(trimmed)) {
+        addFinding(findings, "EMAIL", 0.99, 0, content.length, content, ["field_hint:email"], context);
       } else if (categoryEnabled(options, "PLACE") && PLACE_KEY.test(context.keyHint) && /^[A-Za-z][A-Za-z ,.'-]{1,60}$/.test(trimmed)) {
         addFinding(findings, "PLACE", 0.75, 0, content.length, content, ["field_hint:place"], context);
       } else if (categoryEnabled(options, "ORG") && ORG_KEY.test(context.keyHint) && /^[A-Za-z0-9][A-Za-z0-9 &.,'-]{2,80}$/.test(trimmed)) {
