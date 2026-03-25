@@ -76,6 +76,10 @@ body{
   color:var(--muted);
   font-size:13px;
 }
+.static-note{
+  opacity:.9;
+  cursor:default;
+}
 .panel-head{
   padding:18px 20px 12px;
   border-bottom:1px solid rgba(222,207,183,.7);
@@ -112,6 +116,7 @@ body{
 }
 .control-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
 .summary{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+.summary-trust{margin-top:-4px}
 .category-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
 .stack{display:grid;gap:10px}
 .label{
@@ -215,6 +220,7 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .badge.financial{background:#e9f3db;color:#577424;border-color:#cde2a8}
 .badge.network{background:#dff2f2;color:#1f6670;border-color:#b8dfdf}
 .badge.secrets{background:#efe3f6;color:#6c368b;border-color:#d7bde7}
+.badge.trust{background:#f2ede3;color:#5c6773;border-color:#dfd4c0}
 .finding code,.output,.mini-results{
   display:block;
   white-space:pre-wrap;

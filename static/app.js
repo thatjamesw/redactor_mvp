@@ -7,11 +7,11 @@ const textInput = document.querySelector("#text-input");
 const presetSelect = document.querySelector("#preset-select");
 const modeSelect = document.querySelector("#mode-select");
 const confidenceSelect = document.querySelector("#confidence-select");
+const imageModeSelect = document.querySelector("#image-mode-select");
 const filterSearch = document.querySelector("#filter-search");
 const strictEmail = document.querySelector("#strict-email");
 const detectNames = document.querySelector("#detect-names");
 const detectFaces = document.querySelector("#detect-faces");
-const aggressiveImageDocs = document.querySelector("#aggressive-image-docs");
 const categoryToggles = [...document.querySelectorAll(".category-toggle")];
 const findingsEl = document.querySelector("#findings");
 const reviewEmpty = document.querySelector("#review-empty");
@@ -37,18 +37,23 @@ const stickySummary = document.querySelector("#sticky-summary");
 const metricTotal = document.querySelector("#metric-total");
 const metricHigh = document.querySelector("#metric-high");
 const metricMedium = document.querySelector("#metric-medium");
+const metricAuto = document.querySelector("#metric-auto");
+const metricCurrent = document.querySelector("#metric-current");
+const metricLeft = document.querySelector("#metric-left");
+const selectionNote = document.querySelector("#selection-note");
 
 let fileState = null;
 let scanState = null;
 let outputState = null;
 let selectionState = new Set();
+let recommendedSelectionState = new Set();
 
 const presets = {
   llm_safe: {
     strictEmail: true,
     detectNames: true,
     detectFaces: true,
-    aggressiveImageDocs: false,
+    imageMode: "standard",
     confidence: "high",
     categories: { pii: true, identity: true, financial: true, network: true, secrets: true },
   },
@@ -56,7 +61,7 @@ const presets = {
     strictEmail: true,
     detectNames: true,
     detectFaces: true,
-    aggressiveImageDocs: false,
+    imageMode: "standard",
     confidence: "medium",
     categories: { pii: true, identity: true, financial: true, network: true, secrets: true },
   },
@@ -64,7 +69,7 @@ const presets = {
     strictEmail: true,
     detectNames: false,
     detectFaces: false,
-    aggressiveImageDocs: false,
+    imageMode: "standard",
     confidence: "high",
     categories: { pii: false, identity: false, financial: false, network: true, secrets: true },
   },
@@ -72,7 +77,7 @@ const presets = {
     strictEmail: true,
     detectNames: true,
     detectFaces: true,
-    aggressiveImageDocs: true,
+    imageMode: "document_safe",
     confidence: "medium",
     categories: { pii: true, identity: true, financial: true, network: false, secrets: false },
   },
@@ -91,6 +96,35 @@ function renderSummary(summary = { total: 0, high: 0, medium: 0 }) {
   metricTotal.textContent = String(summary.total || 0);
   metricHigh.textContent = String(summary.high || 0);
   metricMedium.textContent = String(summary.medium || 0);
+}
+
+function setsEqual(left, right) {
+  if (left.size !== right.size) return false;
+  for (const item of left) if (!right.has(item)) return false;
+  return true;
+}
+
+function renderSelectionTrust() {
+  const autoCount = recommendedSelectionState.size;
+  const currentCount = selectionState.size;
+  const total = scanState?.findings?.length || 0;
+  const leftCount = Math.max(0, total - currentCount);
+  metricAuto.textContent = String(autoCount);
+  metricCurrent.textContent = String(currentCount);
+  metricLeft.textContent = String(leftCount);
+
+  if (!scanState) {
+    selectionNote.textContent = "High-confidence findings will be auto-selected after a scan.";
+    return;
+  }
+  const thresholdLabel = confidenceSelect.value === "medium" ? "high and medium confidence" : "high confidence";
+  if (setsEqual(selectionState, recommendedSelectionState)) {
+    selectionNote.textContent = `Auto-selection is using ${thresholdLabel}. ${leftCount} finding${leftCount === 1 ? "" : "s"} remain outside the current output.`;
+    return;
+  }
+  const added = [...selectionState].filter((id) => !recommendedSelectionState.has(id)).length;
+  const removed = [...recommendedSelectionState].filter((id) => !selectionState.has(id)).length;
+  selectionNote.textContent = `You adjusted the default selection: ${added} added, ${removed} removed. Current output reflects ${currentCount} selected finding${currentCount === 1 ? "" : "s"}.`;
 }
 
 function refreshActions() {
@@ -134,7 +168,7 @@ function applyPreset(name) {
   strictEmail.checked = preset.strictEmail;
   detectNames.checked = preset.detectNames;
   detectFaces.checked = preset.detectFaces;
-  aggressiveImageDocs.checked = preset.aggressiveImageDocs;
+  imageModeSelect.value = preset.imageMode;
   confidenceSelect.value = preset.confidence;
   categoryToggles.forEach((toggle) => {
     toggle.checked = preset.categories[toggle.dataset.category] !== false;
@@ -146,7 +180,8 @@ function currentOptions() {
     strictEmail: strictEmail.checked,
     detectNames: detectNames.checked,
     detectFaces: detectFaces.checked,
-    aggressiveImageDocs: aggressiveImageDocs.checked,
+    aggressiveImageDocs: imageModeSelect.value === "document_safe",
+    imageMode: imageModeSelect.value,
     enabledCategories: currentEnabledCategories(),
   };
 }
@@ -185,6 +220,7 @@ function renderFindings() {
   findingsEl.innerHTML = "";
   if (!scanState) {
     renderSummary();
+    renderSelectionTrust();
     reviewEmpty.classList.remove("hidden");
     return;
   }
@@ -194,14 +230,20 @@ function renderFindings() {
 
   for (const finding of filtered) {
     const confidenceClass = finding.confidence >= 0.8 ? "high" : "medium";
+    const wasRecommended = recommendedSelectionState.has(finding.id);
+    const isSelected = selectionState.has(finding.id);
+    const selectionLabel = isSelected
+      ? (wasRecommended ? "Auto-selected" : "Manually selected")
+      : (wasRecommended ? "Skipped manually" : "Not auto-selected");
     const wrapper = document.createElement("article");
     wrapper.className = "finding";
     wrapper.innerHTML = `
       <div class="finding-top">
-        <label class="toggle"><input class="finding-select" type="checkbox" value="${finding.id}" ${selectionState.has(finding.id) ? "checked" : ""} /> Select</label>
+        <label class="toggle"><input class="finding-select" type="checkbox" value="${finding.id}" ${isSelected ? "checked" : ""} /> Select</label>
         <span class="badge ${confidenceClass}">${finding.label}</span>
         <span class="badge ${finding.category || "pii"}">${finding.category || "other"}</span>
         <span class="badge ${confidenceClass}">${finding.confidence.toFixed(2)}</span>
+        <span class="badge trust">${selectionLabel}</span>
       </div>
       <code>${escapeHtml(finding.original)}</code>
       <div class="meta">${escapeHtml(finding.context?.previewPath || finding.context?.kind || "text")} • ${escapeHtml((finding.reasoning || []).join(", ") || "matched rule")}</div>
@@ -213,8 +255,10 @@ function renderFindings() {
 function updateSelectionFromThreshold() {
   if (!scanState) return;
   const threshold = autoSelectThreshold();
-  selectionState = new Set(scanState.findings.filter((item) => item.confidence >= threshold).map((item) => item.id));
+  recommendedSelectionState = new Set(scanState.findings.filter((item) => item.confidence >= threshold).map((item) => item.id));
+  selectionState = new Set(recommendedSelectionState);
   renderFindings();
+  renderSelectionTrust();
 }
 
 function setOutput(result) {
@@ -226,6 +270,7 @@ function setOutput(result) {
   }
   renderFormatNote(result.formatInfo, outputNote);
   refreshActions();
+  renderSelectionTrust();
 }
 
 async function refreshOutputFromSelection(statusMessage = "") {
@@ -376,6 +421,7 @@ document.querySelector("#clear-button").addEventListener("click", async () => {
   scanState = null;
   outputState = null;
   selectionState = new Set();
+  recommendedSelectionState = new Set();
   findingsEl.innerHTML = "";
   outputEl.innerHTML = "";
   fileSummary.textContent = "No file selected.";
@@ -388,6 +434,7 @@ document.querySelector("#clear-button").addEventListener("click", async () => {
   benchmarkHit.textContent = "0";
   benchmarkRate.textContent = "0%";
   renderSummary();
+  renderSelectionTrust();
   reviewEmpty.classList.remove("hidden");
   refreshActions();
   await shutdownImageWorker();
@@ -399,12 +446,14 @@ document.querySelector("#clear-button").addEventListener("click", async () => {
 document.querySelector("#select-all-button").addEventListener("click", () => {
   selectionState = new Set((scanState?.findings || []).map((item) => item.id));
   renderFindings();
+  renderSelectionTrust();
   refreshOutputFromSelection().catch((error) => setStatus(outputStatus, `Refresh failed: ${error.message}`, "error"));
 });
 
 document.querySelector("#select-none-button").addEventListener("click", () => {
   selectionState = new Set();
   renderFindings();
+  renderSelectionTrust();
   refreshOutputFromSelection().catch((error) => setStatus(outputStatus, `Refresh failed: ${error.message}`, "error"));
 });
 
@@ -431,7 +480,7 @@ detectNames.addEventListener("change", () => {
 detectFaces.addEventListener("change", () => {
   if (scanState) runScan().catch((error) => setStatus(inputStatus, `Image update failed: ${error.message}`, "error"));
 });
-aggressiveImageDocs.addEventListener("change", () => {
+imageModeSelect.addEventListener("change", () => {
   if (scanState) runScan().catch((error) => setStatus(inputStatus, `Image update failed: ${error.message}`, "error"));
 });
 categoryToggles.forEach((toggle) => {
@@ -445,6 +494,7 @@ findingsEl.addEventListener("change", (event) => {
   if (!(target instanceof HTMLInputElement) || !target.classList.contains("finding-select")) return;
   if (target.checked) selectionState.add(target.value);
   else selectionState.delete(target.value);
+  renderSelectionTrust();
   refreshOutputFromSelection().catch((error) => setStatus(outputStatus, `Refresh failed: ${error.message}`, "error"));
 });
 
@@ -494,6 +544,7 @@ textInput.addEventListener("input", () => {
 
 refreshActions();
 applyPreset(presetSelect.value);
+renderSelectionTrust();
 window.addEventListener("beforeunload", () => {
   shutdownImageWorker().catch(() => {});
 });

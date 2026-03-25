@@ -61,6 +61,13 @@
               <option value="medium">High and medium confidence</option>
             </select>
           </div>
+          <div class="stack">
+            <label class="label" for="image-mode-select">Image Workflow</label>
+            <select id="image-mode-select">
+              <option value="standard">Standard image review</option>
+              <option value="document_safe">Identity document mode</option>
+            </select>
+          </div>
         </div>
 
         <div class="stack">
@@ -99,7 +106,7 @@
           </div>
           <div class="toggle-row">
             <label class="toggle"><input id="detect-faces" type="checkbox" checked /> Redact human faces in images</label>
-            <label class="toggle"><input id="aggressive-image-docs" type="checkbox" /> Aggressive document-image mode</label>
+            <span class="toggle static-note">Identity document mode uses broader region redaction for passports and IDs.</span>
           </div>
           <div class="category-grid">
             <label class="category-card"><input class="category-toggle" type="checkbox" data-category="pii" checked /><span>Core PII</span><small>email, phone, SSN, passport, VIN</small></label>
@@ -153,6 +160,12 @@
             <div class="metric"><strong id="metric-high">0</strong><span>High confidence</span></div>
             <div class="metric"><strong id="metric-medium">0</strong><span>Medium confidence</span></div>
           </div>
+          <div class="summary summary-trust">
+            <div class="metric"><strong id="metric-auto">0</strong><span>Auto-selected</span></div>
+            <div class="metric"><strong id="metric-current">0</strong><span>In current output</span></div>
+            <div class="metric"><strong id="metric-left">0</strong><span>Left unselected</span></div>
+          </div>
+          <div id="selection-note" class="inline-note">High-confidence findings will be auto-selected after a scan.</div>
           <div id="findings" class="findings"></div>
           <div id="review-empty" class="inline-note">No findings yet. Run a scan to inspect the input.</div>
         </div>
