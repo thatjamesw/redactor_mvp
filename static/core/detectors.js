@@ -67,8 +67,8 @@ function categoryForLabel(label) {
   if (["API_KEY", "AWS_ACCESS_KEY", "JWT", "POTENTIAL_SECRET"].includes(label)) return "secrets";
   if (["IPV4", "IPV4_CIDR", "IPV6", "MAC_ADDRESS"].includes(label)) return "network";
   if (["CREDIT_CARD", "US_TAX_ID"].includes(label)) return "financial";
-  if (["PERSON", "PLACE", "ORG", "STREET_ADDRESS"].includes(label)) return "identity";
-  if (["PHONE", "EMAIL", "SSN", "PASSPORT", "DRIVERS_LICENSE", "VIN", "UUID"].includes(label)) return "pii";
+  if (["PERSON", "PLACE", "ORG", "STREET_ADDRESS", "FACE", "DOCUMENT_TEXT"].includes(label)) return "identity";
+  if (["PHONE", "EMAIL", "SSN", "PASSPORT", "PASSPORT_ZONE", "DRIVERS_LICENSE", "VIN", "UUID"].includes(label)) return "pii";
   return "other";
 }
 

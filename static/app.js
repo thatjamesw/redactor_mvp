@@ -10,6 +10,8 @@ const confidenceSelect = document.querySelector("#confidence-select");
 const filterSearch = document.querySelector("#filter-search");
 const strictEmail = document.querySelector("#strict-email");
 const detectNames = document.querySelector("#detect-names");
+const detectFaces = document.querySelector("#detect-faces");
+const aggressiveImageDocs = document.querySelector("#aggressive-image-docs");
 const categoryToggles = [...document.querySelectorAll(".category-toggle")];
 const findingsEl = document.querySelector("#findings");
 const reviewEmpty = document.querySelector("#review-empty");
@@ -45,24 +47,32 @@ const presets = {
   llm_safe: {
     strictEmail: true,
     detectNames: true,
+    detectFaces: true,
+    aggressiveImageDocs: false,
     confidence: "high",
     categories: { pii: true, identity: true, financial: true, network: true, secrets: true },
   },
   balanced: {
     strictEmail: true,
     detectNames: true,
+    detectFaces: true,
+    aggressiveImageDocs: false,
     confidence: "medium",
     categories: { pii: true, identity: true, financial: true, network: true, secrets: true },
   },
   secrets_only: {
     strictEmail: true,
     detectNames: false,
+    detectFaces: false,
+    aggressiveImageDocs: false,
     confidence: "high",
     categories: { pii: false, identity: false, financial: false, network: true, secrets: true },
   },
   structured_pii: {
     strictEmail: true,
     detectNames: true,
+    detectFaces: true,
+    aggressiveImageDocs: true,
     confidence: "medium",
     categories: { pii: true, identity: true, financial: true, network: false, secrets: false },
   },
@@ -123,6 +133,8 @@ function applyPreset(name) {
   if (!preset) return;
   strictEmail.checked = preset.strictEmail;
   detectNames.checked = preset.detectNames;
+  detectFaces.checked = preset.detectFaces;
+  aggressiveImageDocs.checked = preset.aggressiveImageDocs;
   confidenceSelect.value = preset.confidence;
   categoryToggles.forEach((toggle) => {
     toggle.checked = preset.categories[toggle.dataset.category] !== false;
@@ -133,6 +145,8 @@ function currentOptions() {
   return {
     strictEmail: strictEmail.checked,
     detectNames: detectNames.checked,
+    detectFaces: detectFaces.checked,
+    aggressiveImageDocs: aggressiveImageDocs.checked,
     enabledCategories: currentEnabledCategories(),
   };
 }

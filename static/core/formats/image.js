@@ -131,6 +131,30 @@ function unionBox(boxes) {
   );
 }
 
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function normaliseBox(box, width, height, padding = 0) {
+  return {
+    x0: clamp(box.x0 - padding, 0, width),
+    y0: clamp(box.y0 - padding, 0, height),
+    x1: clamp(box.x1 + padding, 0, width),
+    y1: clamp(box.y1 + padding, 0, height),
+  };
+}
+
+function padBoxByRatio(box, width, height, ratio = 0.08) {
+  const padX = Math.max(8, (box.x1 - box.x0) * ratio);
+  const padY = Math.max(8, (box.y1 - box.y0) * ratio);
+  return {
+    x0: clamp(box.x0 - padX, 0, width),
+    y0: clamp(box.y0 - padY, 0, height),
+    x1: clamp(box.x1 + padX, 0, width),
+    y1: clamp(box.y1 + padY, 0, height),
+  };
+}
+
 function lineGroups(words) {
   const map = new Map();
   words.forEach((word, index) => {
@@ -139,6 +163,31 @@ function lineGroups(words) {
     map.get(key).push({ ...word, index });
   });
   return [...map.values()].map((group) => group.sort((left, right) => (left.word_num ?? left.index) - (right.word_num ?? right.index)));
+}
+
+function lineEntries(groups, scaleX, scaleY) {
+  return groups.map((group, index) => {
+    const box = unionBox(group.map((word) => ({
+      x0: word.bbox.x0 / scaleX,
+      y0: word.bbox.y0 / scaleY,
+      x1: word.bbox.x1 / scaleX,
+      y1: word.bbox.y1 / scaleY,
+    })));
+    return {
+      index,
+      text: group.map((word) => word.text).join(" ").trim(),
+      box,
+      words: group.map((word) => ({
+        ...word,
+        bbox: {
+          x0: word.bbox.x0 / scaleX,
+          y0: word.bbox.y0 / scaleY,
+          x1: word.bbox.x1 / scaleX,
+          y1: word.bbox.y1 / scaleY,
+        },
+      })),
+    };
+  });
 }
 
 function parseTsvWords(tsv = "") {
@@ -185,6 +234,121 @@ function buildCandidates(group) {
     }
   }
   return candidates;
+}
+
+async function detectFaceFindings(document, options = {}) {
+  if (!options.detectFaces || typeof globalThis.FaceDetector !== "function") return [];
+  try {
+    const image = await loadImage(document.dataUrl);
+    const detector = new globalThis.FaceDetector({ fastMode: true, maxDetectedFaces: 6 });
+    const faces = await detector.detect(image);
+    return faces.map((face, index) => {
+      const rect = face.boundingBox;
+      const padded = padBoxByRatio(
+        { x0: rect.x, y0: rect.y, x1: rect.x + rect.width, y1: rect.y + rect.height },
+        document.width,
+        document.height,
+        0.18
+      );
+      return {
+        id: `f-face-${index + 1}`,
+        label: "FACE",
+        category: "identity",
+        confidence: 0.98,
+        start: 0,
+        end: 0,
+        original: "Detected face",
+        reasoning: ["face_detector"],
+        context: {
+          kind: "image",
+          previewPath: `image.face_${index + 1}`,
+          bbox: padded,
+        },
+        replacement: "[REDACTED]",
+      };
+    });
+  } catch (error) {
+    return [];
+  }
+}
+
+function looksLikePassportDocument(lines, document) {
+  const text = lines.map((line) => line.text).join("\n").toUpperCase();
+  const fileHint = String(document.name || "").toUpperCase();
+  return /PASSPORT|PASSEPORT|REISEPASS|TRAVEL DOCUMENT|P<|MRZ/.test(text) || /PASSPORT|ID|TRAVEL/.test(fileHint);
+}
+
+function lineLooksLikeMrz(line) {
+  const text = line.text.toUpperCase();
+  const compact = text.replace(/\s/g, "");
+  const specialCount = (compact.match(/[<|]/g) || []).length;
+  const alnumCount = (compact.match(/[A-Z0-9]/g) || []).length;
+  return compact.startsWith("P<") || (specialCount >= 2 && alnumCount >= 12) || (alnumCount >= 22 && /[A-Z]/.test(compact) && /\d/.test(compact));
+}
+
+function syntheticFinding(label, confidence, original, box, reasoning, previewPath, category) {
+  return {
+    label,
+    category,
+    confidence,
+    start: 0,
+    end: original.length,
+    original,
+    reasoning,
+    context: {
+      kind: "image",
+      previewPath,
+      bbox: box,
+    },
+  };
+}
+
+function buildDocumentHeuristicFindings(lines, document, options = {}) {
+  if (!lines.length) return [];
+  const findings = [];
+  const passportLike = looksLikePassportDocument(lines, document);
+  const imageHeight = document.height || 1;
+  const imageWidth = document.width || 1;
+
+  for (const line of lines) {
+    const upper = line.text.toUpperCase();
+    const isBottomBand = line.box.y0 >= imageHeight * 0.64;
+    const hasPassportNumber = /(?:^|[^A-Z0-9])[A-Z][0-9]{5,8}(?:[^A-Z0-9]|$)/.test(upper);
+    if ((passportLike && isBottomBand && lineLooksLikeMrz(line)) || (passportLike && hasPassportNumber && line.box.x0 >= imageWidth * 0.45)) {
+      findings.push(
+        syntheticFinding(
+          "PASSPORT_ZONE",
+          0.97,
+          line.text || "Passport zone",
+          normaliseBox(line.box, imageWidth, imageHeight, 12),
+          ["passport_document_zone"],
+          `ocr.line_${line.index + 1}`,
+          "pii"
+        )
+      );
+    }
+  }
+
+  if (options.aggressiveImageDocs && passportLike) {
+    for (const line of lines) {
+      const contentChars = (line.text.match(/[A-Za-z0-9]/g) || []).length;
+      if (contentChars < 2) continue;
+      if (line.box.y0 < imageHeight * 0.15) continue;
+      findings.push(
+        syntheticFinding(
+          "DOCUMENT_TEXT",
+          0.94,
+          line.text,
+          normaliseBox(line.box, imageWidth, imageHeight, 8),
+          ["aggressive_document_text"],
+          `ocr.line_${line.index + 1}`,
+          "identity"
+        )
+      );
+    }
+  }
+
+  return findings;
 }
 
 function imageFindingsFromCandidates(candidates, options, lineIndex) {
@@ -245,6 +409,7 @@ export async function scanImageDocument(document, options = {}) {
     return text && confidence >= 22 && word.bbox;
   });
   const lines = lineGroups(words);
+  const lineData = lineEntries(lines, prepared.scaleX, prepared.scaleY);
   const findings = [];
   lines.forEach((group, lineIndex) => {
     findings.push(
@@ -269,12 +434,31 @@ export async function scanImageDocument(document, options = {}) {
       )
     );
   });
-  const annotated = findings.map((finding, index) => ({
-    ...finding,
-    id: `f-${String(index + 1).padStart(4, "0")}`,
-    replacement: "[REDACTED]",
-  }));
-  const preview = lines.map((group) => group.map((word) => word.text).join(" ")).join("\n");
+  findings.push(...buildDocumentHeuristicFindings(lineData, document, options));
+  findings.push(...(await detectFaceFindings(document, options)));
+
+  const annotated = findings.map((finding, index) => {
+    const label = finding.label || "";
+    const paddedBox = finding.context?.bbox
+      ? (
+        label === "FACE"
+          ? padBoxByRatio(finding.context.bbox, document.width, document.height, 0.12)
+          : ["PASSPORT", "PASSPORT_ZONE", "DOCUMENT_TEXT"].includes(label)
+            ? normaliseBox(finding.context.bbox, document.width, document.height, 10)
+            : normaliseBox(finding.context.bbox, document.width, document.height, 4)
+      )
+      : undefined;
+    return {
+      ...finding,
+      id: `f-${String(index + 1).padStart(4, "0")}`,
+      replacement: "[REDACTED]",
+      context: {
+        ...finding.context,
+        bbox: paddedBox,
+      },
+    };
+  });
+  const preview = lineData.map((line) => line.text).join("\n");
   return { document, findings: annotated, summary: summarise(annotated), preview, formatInfo: document.formatInfo };
 }
 
