@@ -188,7 +188,7 @@ function mimeTypeForFile(name = "") {
   if (lower.endsWith(".csv")) return "text/csv;charset=utf-8";
   if (lower.endsWith(".tsv")) return "text/tab-separated-values;charset=utf-8";
   if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
+  if (lower.endsWith(".pdf")) return "text/plain;charset=utf-8";
   return "text/plain;charset=utf-8";
 }
 
@@ -247,9 +247,16 @@ async function readInputFile(file) {
     });
     return { kind: "image", name: file.name, dataUrl, mimeType: file.type, size: file.size, ...dimensions };
   }
-  if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+  if (lowerName.endsWith(".pdf")) {
+    const arrayBuffer = await file.arrayBuffer();
+    return { kind: "pdf", name: file.name, arrayBuffer, size: file.size };
+  }
+  if (lowerName.endsWith(".xlsx")) {
     const arrayBuffer = await file.arrayBuffer();
     return { kind: "xlsx", name: file.name, arrayBuffer, size: file.size };
+  }
+  if (lowerName.endsWith(".xls")) {
+    throw new Error("Legacy .xls files are intentionally unsupported in the secure browser parser. Convert the file to .xlsx first.");
   }
   const text = await file.text();
   return { kind: "text", name: file.name, text, size: file.size };

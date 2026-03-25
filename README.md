@@ -37,7 +37,7 @@ The repository now includes:
 - `package.json` for managed OCR dependency tracking
 - `.github/dependabot.yml` for weekly updates to both npm dependencies and GitHub Actions
 
-For browser parsing specifically, Dependabot can keep `tesseract.js`, `@tesseract.js-data/eng`, and `xlsx` current. That is much safer and more maintainable than hardcoding third-party CDN scripts in the page.
+For browser parsing specifically, Dependabot can keep `tesseract.js`, `@tesseract.js-data/eng`, `exceljs`, and `pdfjs-dist` current. That is much safer and more maintainable than hardcoding third-party CDN scripts in the page.
 
 ## Supported Inputs
 
@@ -51,7 +51,7 @@ The static build currently supports:
 - `.yaml`
 - `.yml`
 - `.xlsx`
-- `.xls`
+- `.pdf`
 - `.png`, `.jpg`, `.jpeg`, `.webp`, and other browser-readable images via local OCR
 
 ## Format Guarantees
@@ -59,14 +59,15 @@ The static build currently supports:
 - `Text`: whitespace and line breaks are preserved except where matched values are replaced
 - `JSON`: structure and surrounding whitespace are preserved while string scalar values are updated in place
 - `CSV` / `TSV`: row and column shape are preserved, though field quoting may be normalized on export
-- `XLSX` / `XLS`: workbook structure, sheet names, and row/column layout are preserved; formulas and rich formatting are not deeply rewritten yet
+- `XLSX`: workbook structure, sheet names, and row/column layout are preserved; untouched formatting stays in place, while redacted cells are safely rewritten as plain values
 - `YAML`: inline scalar values are updated while surrounding formatting is preserved for standard mappings and lists; advanced YAML features such as complex tags, anchors, and block scalar bodies are intentionally left untouched
+- `PDF`: text is extracted locally page by page and exported as cleaned text; this is not visual PDF redaction yet
 
 ## Current Gaps
 
 These are not yet part of the static browser build:
 
-- PDF parsing
+- visual PDF redaction / rebuilt redacted PDFs
 - DOCX parsing
 - exact byte-for-byte formatting preservation for every structured format
 
@@ -78,7 +79,9 @@ OCR is now bundled locally for a security-first static deployment. The app loads
 - [static/vendor/tesseract/worker.min.js](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/tesseract/worker.min.js)
 - [static/vendor/tesseract/core](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/tesseract/core)
 - [static/vendor/tesseract/lang](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/tesseract/lang)
-- [static/vendor/xlsx/xlsx.full.min.js](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/xlsx/xlsx.full.min.js)
+- [static/vendor/exceljs/exceljs.min.js](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/exceljs/exceljs.min.js)
+- [static/vendor/pdfjs/pdf.min.mjs](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/pdfjs/pdf.min.mjs)
+- [static/vendor/pdfjs/pdf.worker.min.mjs](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/pdfjs/pdf.worker.min.mjs)
 
 The vendored files are generated from npm dependencies with:
 
@@ -87,7 +90,7 @@ npm install
 npm run vendor:browser-deps
 ```
 
-That script copies the OCR runtime, worker, WebAssembly core files, `eng.traineddata.gz`, and the local XLSX browser bundle from managed dependencies into the static site directory.
+That script copies the OCR runtime, worker, WebAssembly core files, `eng.traineddata.gz`, the local Excel workbook bundle, and the local PDF parsing bundle from managed dependencies into the static site directory.
 
 Current OCR scope:
 
@@ -128,7 +131,7 @@ Once Pages is enabled for the repository, pushes to `main` will publish the app 
 
 The Pages workflow installs locked npm dependencies and regenerates the local OCR bundle before uploading the site artifact, so Dependabot updates flow through deployment cleanly.
 
-It now regenerates all local browser bundles, including OCR and XLSX parsing assets.
+It now regenerates all local browser bundles, including OCR, XLSX, and PDF parsing assets.
 
 ## Local Development
 
