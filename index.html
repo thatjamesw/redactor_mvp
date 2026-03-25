@@ -25,11 +25,29 @@
       </div>
     </section>
 
+    <section class="workflow-strip">
+      <article class="workflow-step">
+        <span class="workflow-kicker">Step 1</span>
+        <strong>Choose a safe path</strong>
+        <p>Pick a preset, paste or upload your content, then scan.</p>
+      </article>
+      <article class="workflow-step">
+        <span class="workflow-kicker">Step 2</span>
+        <strong>Review what matters</strong>
+        <p>See what was detected, what was auto-selected, and what stayed out.</p>
+      </article>
+      <article class="workflow-step">
+        <span class="workflow-kicker">Step 3</span>
+        <strong>Copy or export</strong>
+        <p>Send LLM-safe text to the clipboard or download a cleaned file.</p>
+      </article>
+    </section>
+
     <section class="panel primary-flow">
       <div class="panel-head">
         <div>
-          <h2>Paste Or Upload</h2>
-          <p>The fastest path is: paste content, click <strong>LLM-safe copy</strong>, then only review if you need to tune what got selected.</p>
+          <h2>Step 1 · Configure And Scan</h2>
+          <p>The fastest path is: pick a workflow, paste content, click <strong>LLM-safe copy</strong>, and only drop into review if you want to tune the output.</p>
         </div>
       </div>
       <div class="panel-body">
@@ -70,6 +88,35 @@
           </div>
         </div>
 
+        <div class="scan-config">
+          <section class="config-card">
+            <div class="config-head">
+              <h3>Detection Style</h3>
+              <p>These affect how aggressively the scanner interprets text and images.</p>
+            </div>
+            <div class="toggle-row">
+              <label class="toggle"><input id="strict-email" type="checkbox" checked /> Strict email matching</label>
+              <label class="toggle"><input id="detect-names" type="checkbox" checked /> Heuristic names and places</label>
+              <label class="toggle"><input id="detect-faces" type="checkbox" checked /> Redact human faces in images</label>
+            </div>
+            <div class="helper-note">Identity document mode uses broader region redaction for passports and IDs.</div>
+          </section>
+
+          <section class="config-card">
+            <div class="config-head">
+              <h3>Detection Scope</h3>
+              <p>Turn categories off when you want fewer false positives. Secrets and network identifiers are the most deterministic.</p>
+            </div>
+            <div class="category-grid">
+              <label class="category-card"><input class="category-toggle" type="checkbox" data-category="pii" checked /><span>Core PII</span><small>email, phone, SSN, passport, VIN</small></label>
+              <label class="category-card"><input class="category-toggle" type="checkbox" data-category="identity" checked /><span>Identity</span><small>names, places, organisations, street addresses</small></label>
+              <label class="category-card"><input class="category-toggle" type="checkbox" data-category="financial" checked /><span>Financial</span><small>cards and tax IDs</small></label>
+              <label class="category-card"><input class="category-toggle" type="checkbox" data-category="network" checked /><span>Network</span><small>IPs, CIDRs, MAC addresses</small></label>
+              <label class="category-card"><input class="category-toggle" type="checkbox" data-category="secrets" checked /><span>Secrets</span><small>API keys, JWTs, AWS keys, long tokens</small></label>
+            </div>
+          </section>
+        </div>
+
         <div class="stack">
           <label class="label" for="text-input">Content</label>
           <textarea id="text-input" placeholder="Paste logs, configs, tickets, payloads, CSV rows, JSON, YAML, or plain text here. You can also paste an image from your clipboard."></textarea>
@@ -95,58 +142,8 @@
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>Detection Controls</h2>
-            <p>Turn categories off when you want fewer false positives. Identity is the noisiest group; secrets and network identifiers are the most deterministic.</p>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="toggle-row">
-            <label class="toggle"><input id="strict-email" type="checkbox" checked /> Strict email matching</label>
-            <label class="toggle"><input id="detect-names" type="checkbox" checked /> Heuristic names and places</label>
-          </div>
-          <div class="toggle-row">
-            <label class="toggle"><input id="detect-faces" type="checkbox" checked /> Redact human faces in images</label>
-            <span class="toggle static-note">Identity document mode uses broader region redaction for passports and IDs.</span>
-          </div>
-          <div class="category-grid">
-            <label class="category-card"><input class="category-toggle" type="checkbox" data-category="pii" checked /><span>Core PII</span><small>email, phone, SSN, passport, VIN</small></label>
-            <label class="category-card"><input class="category-toggle" type="checkbox" data-category="identity" checked /><span>Identity</span><small>names, places, organisations, street addresses</small></label>
-            <label class="category-card"><input class="category-toggle" type="checkbox" data-category="financial" checked /><span>Financial</span><small>cards and tax IDs</small></label>
-            <label class="category-card"><input class="category-toggle" type="checkbox" data-category="network" checked /><span>Network</span><small>IPs, CIDRs, MAC addresses</small></label>
-            <label class="category-card"><input class="category-toggle" type="checkbox" data-category="secrets" checked /><span>Secrets</span><small>API keys, JWTs, AWS keys, long tokens</small></label>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>Coverage Check</h2>
-            <p>Run the built-in benchmark corpus to see how many of the current example identifiers are detected.</p>
-          </div>
-          <div class="button-row">
-            <button id="benchmark-button" class="ghost">Run benchmark</button>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="summary">
-            <div class="metric"><strong id="benchmark-total">0</strong><span>Benchmark cases</span></div>
-            <div class="metric"><strong id="benchmark-hit">0</strong><span>Matched</span></div>
-            <div class="metric"><strong id="benchmark-rate">0%</strong><span>Coverage</span></div>
-          </div>
-          <div id="benchmark-status" class="status"></div>
-          <div id="benchmark-breakdown" class="inline-note">Category breakdown will appear here after running the benchmark.</div>
-          <div id="benchmark-results" class="mini-results empty">Benchmark results will appear here.</div>
-        </div>
-      </section>
-    </section>
-
-    <section class="grid">
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>Review Findings</h2>
-            <p>Selections are preserved while filtering. Auto-selection follows your confidence setting.</p>
+            <h2>Step 2 · Review</h2>
+            <p>Focus on what changed the output: what was detected, what the app selected by default, and what you chose to keep or exclude.</p>
           </div>
           <div class="button-row">
             <input id="filter-search" type="search" placeholder="Filter by label, category, path, or value" />
@@ -174,8 +171,8 @@
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h2>Output</h2>
-            <p>Use the fast path first, then inspect this output if you want to refine it before sending it to an LLM.</p>
+            <h2>Step 3 · Output</h2>
+            <p>Use this as the final handoff surface for LLM-safe text, structured exports, or cleaned document images.</p>
           </div>
         </div>
         <div class="panel-body">
@@ -185,6 +182,29 @@
         </div>
       </section>
     </section>
+
+    <details class="panel benchmark-panel">
+      <summary class="benchmark-summary">
+        <div>
+          <strong>Coverage Lab</strong>
+          <span>Benchmarks and detector tuning live here, outside the main workflow.</span>
+        </div>
+        <span class="ghost summary-button">Open benchmark tools</span>
+      </summary>
+      <div class="panel-body">
+        <div class="button-row">
+          <button id="benchmark-button" class="ghost">Run benchmark</button>
+        </div>
+        <div class="summary">
+          <div class="metric"><strong id="benchmark-total">0</strong><span>Benchmark cases</span></div>
+          <div class="metric"><strong id="benchmark-hit">0</strong><span>Matched</span></div>
+          <div class="metric"><strong id="benchmark-rate">0%</strong><span>Coverage</span></div>
+        </div>
+        <div id="benchmark-status" class="status"></div>
+        <div id="benchmark-breakdown" class="inline-note">Category breakdown will appear here after running the benchmark.</div>
+        <div id="benchmark-results" class="mini-results empty">Benchmark results will appear here.</div>
+      </div>
+    </details>
   </main>
 
   <div class="sticky-bar">
