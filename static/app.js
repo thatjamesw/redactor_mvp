@@ -16,11 +16,12 @@ const categoryToggles = [...document.querySelectorAll(".category-toggle")];
 const findingsEl = document.querySelector("#findings");
 const reviewEmpty = document.querySelector("#review-empty");
 const outputEl = document.querySelector("#output");
-const workflowGrid = document.querySelector("#workflow-grid");
 const reviewPanel = document.querySelector(".review-panel");
 const reviewExpandButton = document.querySelector("#review-expand-button");
 const outputPanel = document.querySelector(".output-panel");
 const outputExpandButton = document.querySelector("#output-expand-button");
+const focusShell = document.querySelector("#focus-shell");
+const focusHost = document.querySelector("#focus-host");
 const inputStatus = document.querySelector("#input-status");
 const outputStatus = document.querySelector("#output-status");
 const outputRisk = document.querySelector("#output-risk");
@@ -63,8 +64,9 @@ let manualBoxDraft = null;
 let manualBoxCounter = 0;
 let selectedManualFindingId = null;
 let manualDragState = null;
-let reviewExpanded = false;
-let outputExpanded = false;
+let activeFocusKind = "";
+let activeFocusPanel = null;
+let focusPlaceholder = null;
 
 const presets = {
   llm_safe: {
@@ -176,32 +178,55 @@ function refreshActions() {
     : (scanState ? "Adjust findings and output will update automatically." : "Run a scan to generate safe output.");
 }
 
-function syncFocusModes() {
-  const wasFocused = document.body.classList.contains("review-expanded") || document.body.classList.contains("output-expanded");
-  if (reviewPanel) reviewPanel.classList.toggle("expanded", reviewExpanded);
-  if (outputPanel) outputPanel.classList.toggle("expanded", outputExpanded);
-  if (workflowGrid) {
-    workflowGrid.classList.toggle("review-focus", reviewExpanded);
-    workflowGrid.classList.toggle("output-focus", outputExpanded);
-  }
-  document.body.classList.toggle("review-expanded", reviewExpanded);
-  document.body.classList.toggle("output-expanded", outputExpanded);
+function syncFocusButtons() {
   if (reviewExpandButton) {
+    const reviewExpanded = activeFocusKind === "review";
     reviewExpandButton.textContent = reviewExpanded ? "Collapse review" : "Expand review";
     reviewExpandButton.setAttribute("aria-pressed", reviewExpanded ? "true" : "false");
   }
   if (outputExpandButton) {
+    const outputExpanded = activeFocusKind === "output";
     outputExpandButton.textContent = outputExpanded ? "Collapse output" : "Expand output";
     outputExpandButton.setAttribute("aria-pressed", outputExpanded ? "true" : "false");
   }
-  if (reviewExpanded) {
-    reviewPanel?.scrollIntoView({ block: "start", behavior: "instant" });
-  } else if (outputExpanded) {
-    outputPanel?.scrollIntoView({ block: "start", behavior: "instant" });
-  } else if (wasFocused) {
-    void document.body.offsetHeight;
-    requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+}
+
+function closeFocusPanel() {
+  if (!activeFocusPanel || !focusPlaceholder) return;
+  activeFocusPanel.classList.remove("focused-panel");
+  focusPlaceholder.parentNode?.insertBefore(activeFocusPanel, focusPlaceholder);
+  focusPlaceholder.remove();
+  focusPlaceholder = null;
+  activeFocusPanel = null;
+  activeFocusKind = "";
+  focusShell?.classList.add("hidden");
+  focusShell?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("focus-open");
+  syncFocusButtons();
+  void document.body.offsetHeight;
+  requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+}
+
+function openFocusPanel(kind) {
+  const panel = kind === "review" ? reviewPanel : outputPanel;
+  if (!panel || !focusHost || !focusShell) return;
+  if (activeFocusKind === kind) {
+    closeFocusPanel();
+    return;
   }
+  closeFocusPanel();
+  focusPlaceholder = document.createElement("div");
+  focusPlaceholder.className = "focus-placeholder";
+  panel.parentNode?.insertBefore(focusPlaceholder, panel);
+  focusHost.appendChild(panel);
+  panel.classList.add("focused-panel");
+  activeFocusPanel = panel;
+  activeFocusKind = kind;
+  focusShell.classList.remove("hidden");
+  focusShell.setAttribute("aria-hidden", "false");
+  document.body.classList.add("focus-open");
+  syncFocusButtons();
+  panel.scrollIntoView({ block: "start", behavior: "instant" });
 }
 
 function manualFindings() {
@@ -814,25 +839,19 @@ clearButton.addEventListener("click", () => {
 
 if (outputExpandButton) {
   outputExpandButton.addEventListener("click", () => {
-    reviewExpanded = false;
-    outputExpanded = !outputExpanded;
-    syncFocusModes();
+    openFocusPanel("output");
   });
 }
 
 if (reviewExpandButton) {
   reviewExpandButton.addEventListener("click", () => {
-    outputExpanded = false;
-    reviewExpanded = !reviewExpanded;
-    syncFocusModes();
+    openFocusPanel("review");
   });
 }
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && (outputExpanded || reviewExpanded)) {
-    outputExpanded = false;
-    reviewExpanded = false;
-    syncFocusModes();
+  if (event.key === "Escape" && activeFocusKind) {
+    closeFocusPanel();
   }
 });
 
