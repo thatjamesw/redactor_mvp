@@ -75,14 +75,14 @@ These are not yet part of the static browser build:
 
 OCR is now bundled locally for a security-first static deployment. The app loads only from:
 
-- [static/vendor/tesseract/tesseract.min.js](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/tesseract/tesseract.min.js)
-- [static/vendor/tesseract/worker.min.js](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/tesseract/worker.min.js)
-- [static/vendor/tesseract/core](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/tesseract/core)
-- [static/vendor/tesseract/lang](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/tesseract/lang)
-- [static/vendor/exceljs/exceljs.min.js](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/exceljs/exceljs.min.js)
-- [static/vendor/pdfjs/pdf.min.mjs](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/pdfjs/pdf.min.mjs)
-- [static/vendor/pdfjs/pdf.worker.min.mjs](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/pdfjs/pdf.worker.min.mjs)
-- [static/vendor/pdflib/pdf-lib.min.js](/Users/jameswright/dev/_mvp/redactor_mvp/static/vendor/pdflib/pdf-lib.min.js)
+- `static/vendor/tesseract/tesseract.min.js`
+- `static/vendor/tesseract/worker.min.js`
+- `static/vendor/tesseract/core`
+- `static/vendor/tesseract/lang`
+- `static/vendor/exceljs/exceljs.min.js`
+- `static/vendor/pdfjs/pdf.min.mjs`
+- `static/vendor/pdfjs/pdf.worker.min.mjs`
+- `static/vendor/pdflib/pdf-lib.min.js`
 
 The vendored files are generated from npm dependencies with:
 
@@ -139,7 +139,7 @@ It now regenerates all local browser bundles, including OCR, XLSX, and PDF parsi
 Because this is now a static app, the easiest way to test it locally is with a simple static server:
 
 ```bash
-cd /Users/jameswright/dev/_mvp/redactor_mvp
+cd redactor_mvp
 python3 -m http.server 4173
 ```
 
