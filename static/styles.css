@@ -209,6 +209,7 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .primary{background:var(--accent);color:#fff}
 .secondary{background:var(--accent-soft);color:var(--ink)}
 .ghost{background:transparent;color:var(--ink);border:1px solid var(--border)}
+.ghost.danger{color:#8e2115;border-color:rgba(192,50,33,.28);background:rgba(192,50,33,.08)}
 .status{min-height:22px;font-size:14px;color:var(--muted)}
 .status.success{color:var(--success)}
 .status.warn{color:var(--warning)}
@@ -494,6 +495,9 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .sticky-copy span{
   color:var(--muted);
   font-size:13px;
+}
+.sticky-bar .button-row{
+  justify-content:flex-end;
 }
 @media (max-width: 960px){
   .workflow-strip{grid-template-columns:1fr}

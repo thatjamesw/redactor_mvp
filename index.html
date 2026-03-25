@@ -129,13 +129,13 @@
           <button id="apply-button" class="ghost">Refresh output</button>
           <button id="copy-button" class="ghost" disabled>Copy output</button>
           <button id="download-button" class="ghost" disabled>Export file</button>
-          <button id="clear-button" class="ghost">Clear</button>
         </div>
 
         <div id="input-status" class="status"></div>
         <div id="file-summary" class="inline-note">No file selected.</div>
         <div id="format-note" class="inline-note">Format guarantees will appear here after the app recognises your input.</div>
         <div class="inline-note">Security model: no analytics, no backend, no browser storage for pasted content, and OCR assets are served locally from this repo.</div>
+        <div class="inline-note">Use <strong>Secure wipe</strong> when you want to clear the current session, shut down OCR state, and drop in-memory file and output buffers as aggressively as the browser allows.</div>
       </div>
     </section>
 
@@ -228,6 +228,7 @@
       <button id="sticky-safe-copy" class="primary">LLM-safe copy</button>
       <button id="sticky-copy-button" class="ghost" disabled>Copy current output</button>
       <button id="sticky-download-button" class="ghost" disabled>Export</button>
+      <button id="clear-button" class="ghost danger">Secure wipe</button>
     </div>
   </div>
 

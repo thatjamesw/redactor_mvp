@@ -46,6 +46,7 @@ const imageTools = document.querySelector("#image-tools");
 const manualBoxButton = document.querySelector("#manual-box-button");
 const deleteManualBoxButton = document.querySelector("#delete-manual-box-button");
 const clearManualBoxesButton = document.querySelector("#clear-manual-boxes-button");
+const clearButton = document.querySelector("#clear-button");
 
 let fileState = null;
 let scanState = null;
@@ -227,6 +228,116 @@ function mimeTypeForFile(name = "") {
   if (lower.endsWith(".pdf")) return "text/plain;charset=utf-8";
   if (lower.endsWith(".docx")) return "text/plain;charset=utf-8";
   return "text/plain;charset=utf-8";
+}
+
+function wipeArrayBuffer(buffer) {
+  if (!(buffer instanceof ArrayBuffer)) return;
+  try {
+    new Uint8Array(buffer).fill(0);
+  } catch {}
+}
+
+function wipeTypedArray(view) {
+  if (!ArrayBuffer.isView(view)) return;
+  try {
+    if (typeof view.fill === "function") view.fill(0);
+    else new Uint8Array(view.buffer, view.byteOffset, view.byteLength).fill(0);
+  } catch {}
+}
+
+function wipeBinaryValue(value) {
+  if (!value) return;
+  if (value instanceof ArrayBuffer) {
+    wipeArrayBuffer(value);
+    return;
+  }
+  if (ArrayBuffer.isView(value)) wipeTypedArray(value);
+}
+
+function wipeFileState(state) {
+  if (!state) return;
+  wipeArrayBuffer(state.arrayBuffer);
+  if ("dataUrl" in state) state.dataUrl = "";
+  if ("name" in state) state.name = "";
+}
+
+function wipeScanState(state) {
+  if (!state) return;
+  for (const finding of state.findings || []) {
+    finding.original = "";
+    finding.replacement = "";
+    if (finding.context?.bbox) {
+      finding.context.bbox.x0 = 0;
+      finding.context.bbox.y0 = 0;
+      finding.context.bbox.x1 = 0;
+      finding.context.bbox.y1 = 0;
+    }
+  }
+  const documentModel = state.document;
+  if (!documentModel) return;
+  if ("content" in documentModel) documentModel.content = "";
+  if ("extractedText" in documentModel) documentModel.extractedText = "";
+  if ("dataUrl" in documentModel) documentModel.dataUrl = "";
+  if ("name" in documentModel) documentModel.name = "";
+  if (Array.isArray(documentModel.pages)) {
+    for (const page of documentModel.pages) {
+      if ("text" in page) page.text = "";
+      if ("dataUrl" in page) page.dataUrl = "";
+      if (Array.isArray(page.lines)) {
+        for (const line of page.lines) line.text = "";
+      }
+    }
+  }
+}
+
+function wipeOutputState(state) {
+  if (!state) return;
+  if ("text" in state) state.text = "";
+  if ("imageDataUrl" in state) state.imageDataUrl = "";
+  if ("fileName" in state) state.fileName = "";
+  wipeBinaryValue(state.binaryData);
+}
+
+async function secureSessionWipe() {
+  clearButton.disabled = true;
+  setStatus(inputStatus, "Secure wipe in progress. Clearing previews, buffers, and local worker state.", "warn");
+  await shutdownImageWorker();
+  wipeOutputState(outputState);
+  wipeScanState(scanState);
+  wipeFileState(fileState);
+
+  fileInput.value = "";
+  textInput.value = "";
+  filterSearch.value = "";
+  fileState = null;
+  scanState = null;
+  outputState = null;
+  selectionState = new Set();
+  recommendedSelectionState = new Set();
+  manualDrawMode = false;
+  manualBoxDraft = null;
+  selectedManualFindingId = null;
+  manualDragState = null;
+  findingsEl.innerHTML = "";
+  outputEl.innerHTML = "";
+  fileSummary.textContent = "No file selected.";
+  formatNote.textContent = "Format guarantees will appear here after the app recognises your input.";
+  outputNote.textContent = "Output formatting notes will appear here once content has been processed.";
+  benchmarkResults.textContent = "Benchmark results will appear here.";
+  benchmarkResults.classList.add("empty");
+  benchmarkBreakdown.textContent = "Category breakdown will appear here after running the benchmark.";
+  benchmarkTotal.textContent = "0";
+  benchmarkHit.textContent = "0";
+  benchmarkRate.textContent = "0%";
+  renderSummary();
+  renderSelectionTrust();
+  reviewEmpty.classList.remove("hidden");
+  refreshActions();
+  syncImageToolState();
+  setStatus(inputStatus, "Secure wipe complete. The current session, previews, worker state, and in-memory buffers were cleared as aggressively as the browser allows.", "success");
+  setStatus(outputStatus, "", "");
+  setStatus(benchmarkStatus, "", "");
+  clearButton.disabled = false;
 }
 
 function autoSelectThreshold() {
@@ -659,39 +770,11 @@ stickyDownloadButton.addEventListener("click", () => {
 
 document.querySelector("#benchmark-button").addEventListener("click", runBenchmark);
 
-document.querySelector("#clear-button").addEventListener("click", async () => {
-  fileInput.value = "";
-  textInput.value = "";
-  filterSearch.value = "";
-  fileState = null;
-  scanState = null;
-  outputState = null;
-  selectionState = new Set();
-  recommendedSelectionState = new Set();
-  manualDrawMode = false;
-  manualBoxDraft = null;
-  selectedManualFindingId = null;
-  manualDragState = null;
-  findingsEl.innerHTML = "";
-  outputEl.innerHTML = "";
-  fileSummary.textContent = "No file selected.";
-  formatNote.textContent = "Format guarantees will appear here after the app recognises your input.";
-  outputNote.textContent = "Output formatting notes will appear here once content has been processed.";
-  benchmarkResults.textContent = "Benchmark results will appear here.";
-  benchmarkResults.classList.add("empty");
-  benchmarkBreakdown.textContent = "Category breakdown will appear here after running the benchmark.";
-  benchmarkTotal.textContent = "0";
-  benchmarkHit.textContent = "0";
-  benchmarkRate.textContent = "0%";
-  renderSummary();
-  renderSelectionTrust();
-  reviewEmpty.classList.remove("hidden");
-  refreshActions();
-  await shutdownImageWorker();
-  setStatus(inputStatus, "Cleared the current session.", "");
-  setStatus(outputStatus, "", "");
-  setStatus(benchmarkStatus, "", "");
-  syncImageToolState();
+clearButton.addEventListener("click", () => {
+  secureSessionWipe().catch((error) => {
+    clearButton.disabled = false;
+    setStatus(inputStatus, `Secure wipe failed: ${error.message}`, "error");
+  });
 });
 
 document.querySelector("#select-all-button").addEventListener("click", () => {

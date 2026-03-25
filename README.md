@@ -15,6 +15,7 @@ Browser-based redaction tool for cleaning sensitive data before sharing it with 
 - Includes a more conservative `Paranoid redaction` preset
 - Supports manual blackout boxes for image and PDF redaction when detection misses a region
 - Includes a regression runner for overlap and structured-redaction edge cases
+- Includes a one-click secure session wipe for clearing previews, worker state, and in-memory buffers
 
 ## Security Posture
 
@@ -110,6 +111,7 @@ For high-risk use:
 - choose `Paranoid redaction`
 - review the residual-risk banner before copy/export
 - for images or PDFs, add manual blackout boxes if detection misses a face, signature, field, or region
+- use `Secure wipe` when you are done and want the app to clear file buffers, generated previews, and local OCR state as aggressively as the browser allows
 
 The output panel now warns when findings remain outside the current output, so the app makes residual risk more visible before handoff.
 
