@@ -31,6 +31,8 @@ const US_TIN = /\b9\d{2}-?(?:7\d|8[0-8]|9[0-2])-\d{4}\b/g;
 const MAC_ADDRESS = /\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b/g;
 const VIN = /\b[A-HJ-NPR-Z0-9]{17}\b/g;
 const PASSPORT_GENERIC = /\b[A-Z0-9]{6,9}\b/g;
+const MRZ_PASSPORT_NUMBER = /\b[A-Z][0-9]{6,8}\b/g;
+const MRZ_LINE = /\bP<[A-Z<]{10,}|\b[A-Z0-9<]{20,}\b/g;
 const DRIVERS_LICENSE_GENERIC = /\b[A-Z]{1,2}\d{6,8}\b/g;
 const PHONE = /\b(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)\d{3,4}[\s.-]?\d{3,4}\b/g;
 const ADDRESS_SUFFIX =
@@ -159,9 +161,23 @@ export function scanTextValue(text, options = {}, context = {}) {
       const alphaCount = (value.match(/[A-Z]/g) || []).length;
       const digitCount = (value.match(/\d/g) || []).length;
       const hinted = PASSPORT_KEY.test(context.keyHint || "");
-      if ((hinted && digitCount >= 4) || (alphaCount >= 1 && digitCount >= 5 && hinted)) {
-        addFinding(findings, "PASSPORT", hinted ? 0.88 : 0.7, passportMatch.index, passportMatch.index + value.length, value, [hinted ? "field_hint:passport" : "passport_pattern"], context);
+      const looksLikePassportNumber = alphaCount >= 1 && digitCount >= 5;
+      if ((hinted && digitCount >= 4) || looksLikePassportNumber) {
+        addFinding(findings, "PASSPORT", hinted ? 0.88 : 0.76, passportMatch.index, passportMatch.index + value.length, value, [hinted ? "field_hint:passport" : "passport_pattern"], context);
       }
+    }
+
+    MRZ_PASSPORT_NUMBER.lastIndex = 0;
+    let mrzPassportMatch;
+    while ((mrzPassportMatch = MRZ_PASSPORT_NUMBER.exec(content)) !== null) {
+      const value = mrzPassportMatch[0];
+      addFinding(findings, "PASSPORT", 0.86, mrzPassportMatch.index, mrzPassportMatch.index + value.length, value, ["mrz_passport_pattern"], context);
+    }
+
+    MRZ_LINE.lastIndex = 0;
+    let mrzLineMatch;
+    while ((mrzLineMatch = MRZ_LINE.exec(content)) !== null) {
+      addFinding(findings, "PASSPORT", 0.9, mrzLineMatch.index, mrzLineMatch.index + mrzLineMatch[0].length, mrzLineMatch[0], ["mrz_line_pattern"], context);
     }
   }
 

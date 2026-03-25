@@ -87,6 +87,38 @@ function loadImage(dataUrl) {
   });
 }
 
+async function buildOcrImageDataUrl(dataUrl) {
+  const image = await loadImage(dataUrl);
+  const scale = Math.max(1.6, Math.min(2.2, 1800 / Math.max(image.width, image.height)));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  const frame = context.getImageData(0, 0, canvas.width, canvas.height);
+  const pixels = frame.data;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index];
+    const green = pixels[index + 1];
+    const blue = pixels[index + 2];
+    const luminance = red * 0.299 + green * 0.587 + blue * 0.114;
+    const contrasted = luminance < 128 ? Math.max(0, luminance - 18) : Math.min(255, luminance + 24);
+    pixels[index] = contrasted;
+    pixels[index + 1] = contrasted;
+    pixels[index + 2] = contrasted;
+  }
+  context.putImageData(frame, 0, 0);
+
+  return {
+    dataUrl: canvas.toDataURL("image/png"),
+    scaleX: canvas.width / image.width,
+    scaleY: canvas.height / image.height,
+  };
+}
+
 function unionBox(boxes) {
   return boxes.reduce(
     (acc, box) => ({
@@ -114,7 +146,7 @@ function buildCandidates(group) {
   for (let start = 0; start < group.length; start += 1) {
     let text = "";
     const positions = [];
-    for (let end = start; end < Math.min(group.length, start + 6); end += 1) {
+    for (let end = start; end < Math.min(group.length, start + 10); end += 1) {
       const prefix = text ? " " : "";
       const from = text.length + prefix.length;
       text += `${prefix}${group[end].text}`;
@@ -175,16 +207,37 @@ export function prepareImageDocument(fileState) {
 
 export async function scanImageDocument(document, options = {}) {
   const worker = await ensureWorker();
-  const result = await worker.recognize(document.dataUrl);
+  const prepared = await buildOcrImageDataUrl(document.dataUrl);
+  const result = await worker.recognize(prepared.dataUrl);
   const words = (result.data.words || []).filter((word) => {
     const text = String(word.text || "").trim();
     const confidence = Number(word.confidence ?? word.conf ?? 0);
-    return text && confidence >= 35 && word.bbox;
+    return text && confidence >= 22 && word.bbox;
   });
   const lines = lineGroups(words);
   const findings = [];
   lines.forEach((group, lineIndex) => {
-    findings.push(...imageFindingsFromCandidates(buildCandidates(group), options, lineIndex));
+    findings.push(
+      ...imageFindingsFromCandidates(
+        buildCandidates(group).map((candidate) => ({
+          ...candidate,
+          positions: candidate.positions.map((position) => ({
+            ...position,
+            word: {
+              ...position.word,
+              bbox: {
+                x0: position.word.bbox.x0 / prepared.scaleX,
+                y0: position.word.bbox.y0 / prepared.scaleY,
+                x1: position.word.bbox.x1 / prepared.scaleX,
+                y1: position.word.bbox.y1 / prepared.scaleY,
+              },
+            },
+          })),
+        })),
+        options,
+        lineIndex
+      )
+    );
   });
   const annotated = findings.map((finding, index) => ({
     ...finding,
