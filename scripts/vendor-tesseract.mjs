@@ -50,6 +50,22 @@ const copies = [
     to: path.join(coreRoot, "tesseract-core-simd-lstm.wasm"),
   },
   {
+    from: path.join(repoRoot, "node_modules", "tesseract.js-core", "tesseract-core-relaxedsimd.wasm.js"),
+    to: path.join(coreRoot, "tesseract-core-relaxedsimd.wasm.js"),
+  },
+  {
+    from: path.join(repoRoot, "node_modules", "tesseract.js-core", "tesseract-core-relaxedsimd.wasm"),
+    to: path.join(coreRoot, "tesseract-core-relaxedsimd.wasm"),
+  },
+  {
+    from: path.join(repoRoot, "node_modules", "tesseract.js-core", "tesseract-core-relaxedsimd-lstm.wasm.js"),
+    to: path.join(coreRoot, "tesseract-core-relaxedsimd-lstm.wasm.js"),
+  },
+  {
+    from: path.join(repoRoot, "node_modules", "tesseract.js-core", "tesseract-core-relaxedsimd-lstm.wasm"),
+    to: path.join(coreRoot, "tesseract-core-relaxedsimd-lstm.wasm"),
+  },
+  {
     from: path.join(repoRoot, "node_modules", "@tesseract.js-data", "eng", "4.0.0_best_int", "eng.traineddata.gz"),
     to: path.join(langRoot, "eng.traineddata.gz"),
   },
