@@ -43,3 +43,6 @@ export function annotateFindings(findings) {
   }));
 }
 
+export function descendingReplacementOrder(left, right) {
+  return right.start - left.start || right.end - left.end;
+}

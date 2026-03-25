@@ -1,4 +1,4 @@
-import { base36Token, fnv1a } from "./utils.js";
+import { base36Token, descendingReplacementOrder, fnv1a } from "./utils.js";
 
 export function replacementFor(label, original, mode, cache) {
   if (mode === "redact") return "[REDACTED]";
@@ -22,7 +22,7 @@ export function replacementFor(label, original, mode, cache) {
 }
 
 export function applyTextReplacements(text, findings, selectedIds, mode) {
-  const selected = findings.filter((item) => selectedIds.has(item.id)).sort((left, right) => right.start - left.start);
+  const selected = findings.filter((item) => selectedIds.has(item.id)).sort(descendingReplacementOrder);
   let output = text;
   const cache = new Map();
   for (const item of selected) {
@@ -32,4 +32,3 @@ export function applyTextReplacements(text, findings, selectedIds, mode) {
   }
   return output;
 }
-

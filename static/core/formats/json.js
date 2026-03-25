@@ -1,6 +1,6 @@
 import { scanTextValue } from "../detectors.js";
 import { replacementFor } from "../replacements.js";
-import { annotateFindings, detectLineEnding, summarise } from "../utils.js";
+import { annotateFindings, descendingReplacementOrder, detectLineEnding, summarise } from "../utils.js";
 
 function parseJsonString(text, startIndex) {
   let index = startIndex + 1;
@@ -170,7 +170,7 @@ export function redactJsonDocument(scanResult, selectedIds, mode) {
     const matches = grouped.get(key) || [];
     if (!matches.length) continue;
     let output = location.value;
-    for (const finding of [...matches].sort((left, right) => right.start - left.start)) {
+    for (const finding of [...matches].sort(descendingReplacementOrder)) {
       const original = output.slice(finding.start, finding.end);
       const replacement = replacementFor(finding.label, original, mode, cache);
       output = `${output.slice(0, finding.start)}${replacement}${output.slice(finding.end)}`;
@@ -179,9 +179,8 @@ export function redactJsonDocument(scanResult, selectedIds, mode) {
   }
 
   let text = scanResult.document.source;
-  for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
+  for (const replacement of replacements.sort(descendingReplacementOrder)) {
     text = `${text.slice(0, replacement.start)}${replacement.jsonValue}${text.slice(replacement.end)}`;
   }
   return { text, fileName: scanResult.document.name, formatInfo: scanResult.formatInfo };
 }
-

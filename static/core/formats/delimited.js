@@ -1,6 +1,6 @@
 import { scanTextValue } from "../detectors.js";
 import { replacementFor } from "../replacements.js";
-import { annotateFindings, detectLineEnding, summarise, withTrailingNewline } from "../utils.js";
+import { annotateFindings, descendingReplacementOrder, detectLineEnding, summarise, withTrailingNewline } from "../utils.js";
 
 function escapeCsvCell(value, separator) {
   const text = value == null ? "" : String(value);
@@ -102,7 +102,7 @@ export function redactDelimitedDocument(scanResult, selectedIds, mode) {
   for (const [key, matches] of grouped.entries()) {
     const [rowIndex, columnIndex] = key.split(":").map(Number);
     let output = rows[rowIndex][columnIndex] ?? "";
-    for (const finding of [...matches].sort((left, right) => right.start - left.start)) {
+    for (const finding of [...matches].sort(descendingReplacementOrder)) {
       const original = output.slice(finding.start, finding.end);
       const replacement = replacementFor(finding.label, original, mode, cache);
       output = `${output.slice(0, finding.start)}${replacement}${output.slice(finding.end)}`;
@@ -115,4 +115,3 @@ export function redactDelimitedDocument(scanResult, selectedIds, mode) {
     formatInfo: scanResult.formatInfo,
   };
 }
-
