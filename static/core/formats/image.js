@@ -272,6 +272,34 @@ async function detectFaceFindings(document, options = {}) {
   }
 }
 
+function fallbackPortraitFinding(document, lines, options = {}) {
+  if (!options.detectFaces || !options.aggressiveImageDocs) return [];
+  const textHeavyRightSide = lines.some((line) => line.box.x0 >= document.width * 0.34 && line.box.y0 >= document.height * 0.18 && line.box.y1 <= document.height * 0.78);
+  if (!textHeavyRightSide) return [];
+  const portraitBox = {
+    x0: document.width * 0.06,
+    y0: document.height * 0.24,
+    x1: document.width * 0.31,
+    y1: document.height * 0.64,
+  };
+  return [{
+    id: "f-face-fallback-1",
+    label: "FACE",
+    category: "identity",
+    confidence: 0.86,
+    start: 0,
+    end: 0,
+    original: "Likely portrait region",
+    reasoning: ["document_portrait_fallback"],
+    context: {
+      kind: "image",
+      previewPath: "image.face_fallback",
+      bbox: portraitBox,
+    },
+    replacement: "[REDACTED]",
+  }];
+}
+
 function looksLikePassportDocument(lines, document) {
   const text = lines.map((line) => line.text).join("\n").toUpperCase();
   const fileHint = String(document.name || "").toUpperCase();
@@ -329,11 +357,11 @@ function buildDocumentHeuristicFindings(lines, document, options = {}) {
     }
   }
 
-  if (options.aggressiveImageDocs && passportLike) {
+  if (options.aggressiveImageDocs) {
     for (const line of lines) {
       const contentChars = (line.text.match(/[A-Za-z0-9]/g) || []).length;
       if (contentChars < 2) continue;
-      if (line.box.y0 < imageHeight * 0.15) continue;
+      if (line.box.y0 < imageHeight * 0.15 || line.box.y1 > imageHeight * 0.96) continue;
       findings.push(
         syntheticFinding(
           "DOCUMENT_TEXT",
@@ -435,7 +463,9 @@ export async function scanImageDocument(document, options = {}) {
     );
   });
   findings.push(...buildDocumentHeuristicFindings(lineData, document, options));
-  findings.push(...(await detectFaceFindings(document, options)));
+  const faceFindings = await detectFaceFindings(document, options);
+  findings.push(...faceFindings);
+  if (!faceFindings.length) findings.push(...fallbackPortraitFinding(document, lineData, options));
 
   const annotated = findings.map((finding, index) => {
     const label = finding.label || "";

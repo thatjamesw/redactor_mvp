@@ -422,6 +422,23 @@ confidenceSelect.addEventListener("change", () => {
 modeSelect.addEventListener("change", () => {
   if (scanState) refreshOutputFromSelection().catch((error) => setStatus(outputStatus, `Refresh failed: ${error.message}`, "error"));
 });
+strictEmail.addEventListener("change", () => {
+  if (scanState) runScan().catch((error) => setStatus(inputStatus, `Detector update failed: ${error.message}`, "error"));
+});
+detectNames.addEventListener("change", () => {
+  if (scanState) runScan().catch((error) => setStatus(inputStatus, `Detector update failed: ${error.message}`, "error"));
+});
+detectFaces.addEventListener("change", () => {
+  if (scanState) runScan().catch((error) => setStatus(inputStatus, `Image update failed: ${error.message}`, "error"));
+});
+aggressiveImageDocs.addEventListener("change", () => {
+  if (scanState) runScan().catch((error) => setStatus(inputStatus, `Image update failed: ${error.message}`, "error"));
+});
+categoryToggles.forEach((toggle) => {
+  toggle.addEventListener("change", () => {
+    if (scanState) runScan().catch((error) => setStatus(inputStatus, `Category update failed: ${error.message}`, "error"));
+  });
+});
 filterSearch.addEventListener("input", renderFindings);
 findingsEl.addEventListener("change", (event) => {
   const target = event.target;
