@@ -8,6 +8,10 @@ const PDF_STANDARD_FONT_URL = new URL("../../vendor/pdfjs/standard_fonts/", impo
 
 let pdfPromise = null;
 
+function cloneArrayBuffer(buffer) {
+  return buffer.slice(0);
+}
+
 async function ensurePdfJs() {
   if (pdfPromise) return pdfPromise;
   pdfPromise = (async () => {
@@ -48,7 +52,7 @@ function joinPages(pages) {
 
 export async function preparePdfDocument(fileState) {
   const pdfjs = await ensurePdfJs();
-  const bytes = new Uint8Array(fileState.arrayBuffer);
+  const bytes = new Uint8Array(cloneArrayBuffer(fileState.arrayBuffer));
   const loadingTask = pdfjs.getDocument({
     data: bytes,
     useWorkerFetch: false,

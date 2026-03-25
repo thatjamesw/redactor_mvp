@@ -4,6 +4,10 @@ import { annotateFindings, descendingReplacementOrder, summarise } from "../util
 
 const EXCELJS_SCRIPT_PATH = "./static/vendor/exceljs/exceljs.min.js";
 
+function cloneArrayBuffer(buffer) {
+  return buffer.slice(0);
+}
+
 async function ensureExcelJs() {
   if (typeof document === "undefined") {
     const imported = await import("exceljs");
@@ -59,7 +63,7 @@ function cellDisplayValue(cell) {
 async function loadWorkbook(arrayBuffer) {
   const ExcelJS = await ensureExcelJs();
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(arrayBuffer);
+  await workbook.xlsx.load(cloneArrayBuffer(arrayBuffer));
   return workbook;
 }
 
@@ -92,7 +96,7 @@ export async function prepareXlsxDocument(fileState) {
     kind: "xlsx",
     name: fileState.name || "workbook.xlsx",
     ext: extFromName(fileState.name),
-    sourceBytes: fileState.arrayBuffer,
+    sourceBytes: cloneArrayBuffer(fileState.arrayBuffer),
     sheets,
     formatInfo: {
       label: "Excel workbook (.xlsx)",

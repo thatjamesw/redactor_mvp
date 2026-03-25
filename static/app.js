@@ -181,6 +181,29 @@ function renderFormatNote(formatInfo, target) {
   target.textContent = formatInfo ? `${formatInfo.label}: ${formatInfo.guarantee}` : "";
 }
 
+function lightweightFormatInfo(fileMeta, fileName = "") {
+  const lower = (fileName || "").toLowerCase();
+  if (fileMeta?.kind === "image") {
+    return {
+      label: "Image",
+      guarantee: "OCR and redaction happen locally in the browser. Export uses black-box region redaction.",
+    };
+  }
+  if (fileMeta?.kind === "pdf" || lower.endsWith(".pdf")) {
+    return {
+      label: "PDF (text extraction)",
+      guarantee: "Text is extracted locally page by page and exported as cleaned text. Visual PDF redaction is not rebuilt yet.",
+    };
+  }
+  if (fileMeta?.kind === "xlsx" || lower.endsWith(".xlsx")) {
+    return {
+      label: "Excel workbook (.xlsx)",
+      guarantee: "Workbook structure, sheet names, rows, columns, and untouched cell formatting stay in place. Redacted cells are rewritten safely as plain values.",
+    };
+  }
+  return null;
+}
+
 function mimeTypeForFile(name = "") {
   const lower = name.toLowerCase();
   if (lower.endsWith(".json")) return "application/json;charset=utf-8";
@@ -660,7 +683,7 @@ fileInput.addEventListener("change", async () => {
     manualDrawMode = false;
     manualBoxDraft = null;
     fileSummary.textContent = `${fileState.name} loaded locally (${Math.round(fileState.size / 1024) || 1} KB). Pasted text is ignored while a file is selected.`;
-    renderFormatNote((await currentDocument()).formatInfo, formatNote);
+    renderFormatNote(lightweightFormatInfo(fileState, fileState.name), formatNote);
     setStatus(inputStatus, "File loaded locally. Click LLM-safe copy for the fastest workflow.", "success");
   } catch (error) {
     fileState = null;
@@ -680,7 +703,7 @@ document.addEventListener("paste", async (event) => {
     manualDrawMode = false;
     manualBoxDraft = null;
     fileSummary.textContent = `${fileState.name} pasted from clipboard. OCR will run locally in the browser.`;
-    renderFormatNote((await currentDocument()).formatInfo, formatNote);
+    renderFormatNote(lightweightFormatInfo(fileState, fileState.name), formatNote);
     setStatus(inputStatus, "Image pasted from clipboard. Click scan or LLM-safe copy to process it.", "success");
   } catch (error) {
     setStatus(inputStatus, `Could not read pasted image: ${error.message}`, "error");
