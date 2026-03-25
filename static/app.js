@@ -17,6 +17,8 @@ const findingsEl = document.querySelector("#findings");
 const reviewEmpty = document.querySelector("#review-empty");
 const outputEl = document.querySelector("#output");
 const workflowGrid = document.querySelector("#workflow-grid");
+const reviewPanel = document.querySelector(".review-panel");
+const reviewExpandButton = document.querySelector("#review-expand-button");
 const outputPanel = document.querySelector(".output-panel");
 const outputExpandButton = document.querySelector("#output-expand-button");
 const inputStatus = document.querySelector("#input-status");
@@ -61,6 +63,7 @@ let manualBoxDraft = null;
 let manualBoxCounter = 0;
 let selectedManualFindingId = null;
 let manualDragState = null;
+let reviewExpanded = false;
 let outputExpanded = false;
 
 const presets = {
@@ -173,12 +176,28 @@ function refreshActions() {
     : (scanState ? "Adjust findings and output will update automatically." : "Run a scan to generate safe output.");
 }
 
-function syncOutputExpandState() {
-  outputPanel.classList.toggle("expanded", outputExpanded);
-  workflowGrid.classList.toggle("output-focus", outputExpanded);
+function syncFocusModes() {
+  if (reviewPanel) reviewPanel.classList.toggle("expanded", reviewExpanded);
+  if (outputPanel) outputPanel.classList.toggle("expanded", outputExpanded);
+  if (workflowGrid) {
+    workflowGrid.classList.toggle("review-focus", reviewExpanded);
+    workflowGrid.classList.toggle("output-focus", outputExpanded);
+  }
+  document.body.classList.toggle("review-expanded", reviewExpanded);
   document.body.classList.toggle("output-expanded", outputExpanded);
-  outputExpandButton.textContent = outputExpanded ? "Collapse output" : "Expand output";
-  outputExpandButton.setAttribute("aria-pressed", outputExpanded ? "true" : "false");
+  if (reviewExpandButton) {
+    reviewExpandButton.textContent = reviewExpanded ? "Collapse review" : "Expand review";
+    reviewExpandButton.setAttribute("aria-pressed", reviewExpanded ? "true" : "false");
+  }
+  if (outputExpandButton) {
+    outputExpandButton.textContent = outputExpanded ? "Collapse output" : "Expand output";
+    outputExpandButton.setAttribute("aria-pressed", outputExpanded ? "true" : "false");
+  }
+  if (reviewExpanded) {
+    reviewPanel?.scrollIntoView({ block: "start", behavior: "instant" });
+  } else if (outputExpanded) {
+    outputPanel?.scrollIntoView({ block: "start", behavior: "instant" });
+  }
 }
 
 function manualFindings() {
@@ -789,15 +808,27 @@ clearButton.addEventListener("click", () => {
   });
 });
 
-outputExpandButton.addEventListener("click", () => {
-  outputExpanded = !outputExpanded;
-  syncOutputExpandState();
-});
+if (outputExpandButton) {
+  outputExpandButton.addEventListener("click", () => {
+    reviewExpanded = false;
+    outputExpanded = !outputExpanded;
+    syncFocusModes();
+  });
+}
+
+if (reviewExpandButton) {
+  reviewExpandButton.addEventListener("click", () => {
+    outputExpanded = false;
+    reviewExpanded = !reviewExpanded;
+    syncFocusModes();
+  });
+}
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && outputExpanded) {
+  if (event.key === "Escape" && (outputExpanded || reviewExpanded)) {
     outputExpanded = false;
-    syncOutputExpandState();
+    reviewExpanded = false;
+    syncFocusModes();
   }
 });
 
