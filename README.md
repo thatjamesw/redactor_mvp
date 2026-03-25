@@ -38,6 +38,7 @@ The repository now includes:
 - `.github/dependabot.yml` for weekly updates to both npm dependencies and GitHub Actions
 
 For browser parsing specifically, Dependabot can keep `tesseract.js`, `@tesseract.js-data/eng`, `exceljs`, `pdfjs-dist`, and `pdf-lib` current. That is much safer and more maintainable than hardcoding third-party CDN scripts in the page.
+It can also keep `mammoth` current for local DOCX text extraction.
 
 ## Supported Inputs
 
@@ -52,6 +53,7 @@ The static build currently supports:
 - `.yml`
 - `.xlsx`
 - `.pdf`
+- `.docx`
 - `.png`, `.jpg`, `.jpeg`, `.webp`, and other browser-readable images via local OCR
 
 ## Format Guarantees
@@ -62,13 +64,13 @@ The static build currently supports:
 - `XLSX`: workbook structure, sheet names, and row/column layout are preserved; untouched formatting stays in place, while redacted cells are safely rewritten as plain values
 - `YAML`: inline scalar values are updated while surrounding formatting is preserved for standard mappings and lists; advanced YAML features such as complex tags, anchors, and block scalar bodies are intentionally left untouched
 - `PDF`: pages are rendered locally, detected regions are covered with black bars, and export produces a flattened redacted PDF
+- `DOCX`: document text is extracted locally and exported as cleaned text; original DOCX layout and styling are not rewritten yet
 
 ## Current Gaps
 
 These are not yet part of the static browser build:
 
 - editable native PDF redaction annotations
-- DOCX parsing
 - exact byte-for-byte formatting preservation for every structured format
 
 ## Local OCR Assets
@@ -83,6 +85,7 @@ OCR is now bundled locally for a security-first static deployment. The app loads
 - `static/vendor/pdfjs/pdf.min.mjs`
 - `static/vendor/pdfjs/pdf.worker.min.mjs`
 - `static/vendor/pdflib/pdf-lib.min.js`
+- `static/vendor/mammoth/mammoth.browser.min.js`
 
 The vendored files are generated from npm dependencies with:
 
@@ -91,7 +94,7 @@ npm install
 npm run vendor:browser-deps
 ```
 
-That script copies the OCR runtime, worker, WebAssembly core files, `eng.traineddata.gz`, the local Excel workbook bundle, the local PDF parsing bundle, and the local PDF assembly bundle from managed dependencies into the static site directory.
+That script copies the OCR runtime, worker, WebAssembly core files, `eng.traineddata.gz`, the local Excel workbook bundle, the local PDF parsing bundle, the local PDF assembly bundle, and the local DOCX extraction bundle from managed dependencies into the static site directory.
 
 Current OCR scope:
 
@@ -123,6 +126,18 @@ This covers the structured-redaction and overlap bugs we already hit, including:
 - full international email redaction
 - no partial leftovers like `[REDACTED].cn`
 - JSON/YAML/CSV shape-preserving redaction paths
+- `.xlsx` and `.pdf` regression coverage
+
+## CI Guardrails
+
+GitHub Actions now runs a lightweight CI workflow on pushes to `main` and on pull requests:
+
+- `npm ci`
+- `npm audit --audit-level=high`
+- `npm run vendor:browser-deps`
+- `npm run test:regress`
+
+That gives the repo an automated check for dependency health and the regressions we have already fixed.
 
 ## GitHub Pages
 

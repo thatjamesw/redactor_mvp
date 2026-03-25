@@ -167,7 +167,7 @@ function syntheticFinding(label, confidence, original, box, reasoning, previewPa
   };
 }
 
-function buildPdfFormHeuristics(page) {
+function buildPdfFormHeuristics(page, options = {}) {
   const findings = [];
   const lines = page.lines.map((group, index) => ({
     index,
@@ -187,6 +187,20 @@ function buildPdfFormHeuristics(page) {
           ["pdf_form_field_name"],
           `Page ${page.pageNumber}`,
           "identity",
+          page.pageNumber
+        )
+      );
+    }
+    if (options.imageMode === "document_safe" && /\b(address|phone|mobile|account|a\/c|branch|cif|iban|swift|routing|sort code|beneficiary|holder|customer|date|dated)\b/.test(line.lower)) {
+      findings.push(
+        syntheticFinding(
+          "DOCUMENT_FIELD_ROW",
+          0.95,
+          line.text,
+          normaliseBox(line.box, page.width, page.height, 6),
+          ["pdf_document_field_row"],
+          `Page ${page.pageNumber}`,
+          "pii",
           page.pageNumber
         )
       );
@@ -293,7 +307,7 @@ function pageFindings(page, options = {}) {
     const key = `${finding.label}:${finding.original}:${finding.context?.pageNumber}:${box?.x0}:${box?.y0}:${box?.x1}:${box?.y1}`;
     if (!deduped.has(key) || deduped.get(key).confidence < finding.confidence) deduped.set(key, finding);
   }
-  return [...deduped.values(), ...buildPdfFormHeuristics(page)];
+  return [...deduped.values(), ...buildPdfFormHeuristics(page, options)];
 }
 
 function joinPages(pages, key = "text") {

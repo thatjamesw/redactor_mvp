@@ -1,4 +1,5 @@
 import { prepareDelimitedDocument, redactDelimitedDocument, scanDelimitedDocument } from "./formats/delimited.js";
+import { prepareDocxDocument, redactDocxDocument, scanDocxDocument } from "./formats/docx.js";
 import { prepareImageDocument, redactImageDocument, scanImageDocument } from "./formats/image.js";
 import { prepareJsonDocument, redactJsonDocument, scanJsonDocument } from "./formats/json.js";
 import { preparePdfDocument, redactPdfDocument, scanPdfDocument } from "./formats/pdf.js";
@@ -12,10 +13,12 @@ function looksLikeYaml(text) {
 
 export async function prepareDocument({ textInput, fileName, fileMeta }) {
   if (fileMeta?.kind === "image") return prepareImageDocument(fileMeta);
+  if (fileMeta?.kind === "docx") return prepareDocxDocument(fileMeta);
   if (fileMeta?.kind === "pdf") return preparePdfDocument(fileMeta);
   if (fileMeta?.kind === "xlsx") return prepareXlsxDocument(fileMeta);
   const rawText = textInput ?? "";
   const lower = (fileName || "").toLowerCase();
+  if (lower.endsWith(".docx")) throw new Error("Use the file uploader for DOCX documents.");
   if (lower.endsWith(".pdf")) throw new Error("Use the file uploader for PDF documents.");
   if (lower.endsWith(".xlsx")) throw new Error("Use the file uploader for Excel workbooks.");
   if (lower.endsWith(".xls")) throw new Error("Legacy .xls is intentionally unsupported in the secure browser parser. Convert it to .xlsx first.");
@@ -46,6 +49,7 @@ export async function scanDocument(document, options = {}) {
   if (document.kind === "yaml") return scanYamlDocument(document, options);
   if (document.kind === "table") return scanDelimitedDocument(document, options);
   if (document.kind === "json") return scanJsonDocument(document, options);
+  if (document.kind === "docx") return scanDocxDocument(document, options);
   if (document.kind === "image") return scanImageDocument(document, options);
   if (document.kind === "pdf") return scanPdfDocument(document, options);
   if (document.kind === "xlsx") return scanXlsxDocument(document, options);
@@ -57,6 +61,7 @@ export async function redactDocument(scanResult, selectedIds, mode = "redact") {
   if (scanResult.document.kind === "yaml") return redactYamlDocument(scanResult, selectedIds, mode);
   if (scanResult.document.kind === "table") return redactDelimitedDocument(scanResult, selectedIds, mode);
   if (scanResult.document.kind === "json") return redactJsonDocument(scanResult, selectedIds, mode);
+  if (scanResult.document.kind === "docx") return redactDocxDocument(scanResult, selectedIds, mode);
   if (scanResult.document.kind === "image") return redactImageDocument(scanResult, selectedIds);
   if (scanResult.document.kind === "pdf") return redactPdfDocument(scanResult, selectedIds, mode);
   if (scanResult.document.kind === "xlsx") return redactXlsxDocument(scanResult, selectedIds, mode);

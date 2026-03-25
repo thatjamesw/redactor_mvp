@@ -44,6 +44,7 @@ const metricLeft = document.querySelector("#metric-left");
 const selectionNote = document.querySelector("#selection-note");
 const imageTools = document.querySelector("#image-tools");
 const manualBoxButton = document.querySelector("#manual-box-button");
+const deleteManualBoxButton = document.querySelector("#delete-manual-box-button");
 const clearManualBoxesButton = document.querySelector("#clear-manual-boxes-button");
 
 let fileState = null;
@@ -54,6 +55,8 @@ let recommendedSelectionState = new Set();
 let manualDrawMode = false;
 let manualBoxDraft = null;
 let manualBoxCounter = 0;
+let selectedManualFindingId = null;
+let manualDragState = null;
 
 const presets = {
   llm_safe: {
@@ -176,6 +179,7 @@ function syncImageToolState() {
   );
   imageTools.classList.toggle("hidden", !visualDocument);
   manualBoxButton.disabled = !visualDocument;
+  deleteManualBoxButton.disabled = !visualDocument || !selectedManualFindingId;
   clearManualBoxesButton.disabled = !visualDocument || manualFindings().length === 0;
   manualBoxButton.textContent = manualDrawMode ? "Drawing boxes…" : "Draw blackout boxes";
 }
@@ -194,8 +198,14 @@ function lightweightFormatInfo(fileMeta, fileName = "") {
   }
   if (fileMeta?.kind === "pdf" || lower.endsWith(".pdf")) {
     return {
-      label: "PDF (text extraction)",
-      guarantee: "Text is extracted locally page by page and exported as cleaned text. Visual PDF redaction is not rebuilt yet.",
+      label: "PDF (visual redaction)",
+      guarantee: "Pages are rendered locally and sensitive regions are covered with black bars. Export creates a flattened redacted PDF.",
+    };
+  }
+  if (fileMeta?.kind === "docx" || lower.endsWith(".docx")) {
+    return {
+      label: "DOCX (text extraction)",
+      guarantee: "Document text is extracted locally and exported as cleaned text. Original DOCX layout is not rewritten yet.",
     };
   }
   if (fileMeta?.kind === "xlsx" || lower.endsWith(".xlsx")) {
@@ -215,6 +225,7 @@ function mimeTypeForFile(name = "") {
   if (lower.endsWith(".tsv")) return "text/tab-separated-values;charset=utf-8";
   if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   if (lower.endsWith(".pdf")) return "text/plain;charset=utf-8";
+  if (lower.endsWith(".docx")) return "text/plain;charset=utf-8";
   return "text/plain;charset=utf-8";
 }
 
@@ -277,6 +288,10 @@ async function readInputFile(file) {
     const arrayBuffer = await file.arrayBuffer();
     return { kind: "pdf", name: file.name, arrayBuffer, size: file.size };
   }
+  if (lowerName.endsWith(".docx")) {
+    const arrayBuffer = await file.arrayBuffer();
+    return { kind: "docx", name: file.name, arrayBuffer, size: file.size };
+  }
   if (lowerName.endsWith(".xlsx")) {
     const arrayBuffer = await file.arrayBuffer();
     return { kind: "xlsx", name: file.name, arrayBuffer, size: file.size };
@@ -317,7 +332,9 @@ function renderVisualOverlays() {
       if (!box) continue;
       if ((finding.context?.pageNumber || 1) !== pageNumber) continue;
       const element = document.createElement("div");
-      element.className = "manual-box";
+      element.className = `manual-box${finding.id === selectedManualFindingId ? " selected" : ""}`;
+      element.dataset.findingId = finding.id;
+      element.dataset.pageNumber = String(pageNumber);
       element.style.left = `${(box.x0 / naturalWidth) * displayWidth}px`;
       element.style.top = `${(box.y0 / naturalHeight) * displayHeight}px`;
       element.style.width = `${((box.x1 - box.x0) / naturalWidth) * displayWidth}px`;
@@ -365,6 +382,7 @@ function addManualRedactionBox(box, pageNumber = 1) {
   };
   selectionState.add(finding.id);
   recommendedSelectionState.add(finding.id);
+  selectedManualFindingId = finding.id;
   renderFindings();
   renderSelectionTrust();
   syncImageToolState();
@@ -384,10 +402,38 @@ function clearManualRedactionBoxes() {
     medium: scanState.findings.filter((item) => item.confidence < 0.8).length,
   };
   manualBoxDraft = null;
+  selectedManualFindingId = null;
+  manualDragState = null;
   renderFindings();
   renderSelectionTrust();
   syncImageToolState();
   refreshOutputFromSelection("Cleared manual blackout boxes.").catch((error) => setStatus(outputStatus, `Refresh failed: ${error.message}`, "error"));
+}
+
+function updateManualFindingBox(findingId, nextBox) {
+  if (!scanState) return;
+  const finding = scanState.findings.find((item) => item.id === findingId);
+  if (!finding) return;
+  finding.context = { ...finding.context, bbox: nextBox };
+}
+
+function deleteSelectedManualBox() {
+  if (!scanState || !selectedManualFindingId) return;
+  const manualId = selectedManualFindingId;
+  scanState.findings = scanState.findings.filter((finding) => finding.id !== manualId);
+  selectionState.delete(manualId);
+  recommendedSelectionState.delete(manualId);
+  selectedManualFindingId = null;
+  manualDragState = null;
+  scanState.summary = {
+    total: scanState.findings.length,
+    high: scanState.findings.filter((item) => item.confidence >= 0.8).length,
+    medium: scanState.findings.filter((item) => item.confidence < 0.8).length,
+  };
+  renderFindings();
+  renderSelectionTrust();
+  syncImageToolState();
+  refreshOutputFromSelection("Removed the selected blackout box.").catch((error) => setStatus(outputStatus, `Refresh failed: ${error.message}`, "error"));
 }
 
 function renderFindings() {
@@ -624,6 +670,8 @@ document.querySelector("#clear-button").addEventListener("click", async () => {
   recommendedSelectionState = new Set();
   manualDrawMode = false;
   manualBoxDraft = null;
+  selectedManualFindingId = null;
+  manualDragState = null;
   findingsEl.innerHTML = "";
   outputEl.innerHTML = "";
   fileSummary.textContent = "No file selected.";
@@ -712,6 +760,8 @@ fileInput.addEventListener("change", async () => {
     fileState = await readInputFile(file);
     manualDrawMode = false;
     manualBoxDraft = null;
+    selectedManualFindingId = null;
+    manualDragState = null;
     fileSummary.textContent = `${fileState.name} loaded locally (${Math.round(fileState.size / 1024) || 1} KB). Pasted text is ignored while a file is selected.`;
     renderFormatNote(lightweightFormatInfo(fileState, fileState.name), formatNote);
     setStatus(inputStatus, "File loaded locally. Click LLM-safe copy for the fastest workflow.", "success");
@@ -732,6 +782,8 @@ document.addEventListener("paste", async (event) => {
     fileState = await readInputFile(file);
     manualDrawMode = false;
     manualBoxDraft = null;
+    selectedManualFindingId = null;
+    manualDragState = null;
     fileSummary.textContent = `${fileState.name} pasted from clipboard. OCR will run locally in the browser.`;
     renderFormatNote(lightweightFormatInfo(fileState, fileState.name), formatNote);
     setStatus(inputStatus, "Image pasted from clipboard. Click scan or LLM-safe copy to process it.", "success");
@@ -753,9 +805,14 @@ manualBoxButton.addEventListener("click", () => {
   if (!scanState || !["image", "pdf"].includes(scanState.document.kind)) return;
   manualDrawMode = !manualDrawMode;
   manualBoxDraft = null;
+  manualDragState = null;
   syncImageToolState();
   renderVisualOverlays();
   setStatus(outputStatus, manualDrawMode ? "Drag on the page preview to add blackout boxes." : "Manual blackout mode turned off.", manualDrawMode ? "warn" : "");
+});
+
+deleteManualBoxButton.addEventListener("click", () => {
+  deleteSelectedManualBox();
 });
 
 clearManualBoxesButton.addEventListener("click", () => {
@@ -763,7 +820,55 @@ clearManualBoxesButton.addEventListener("click", () => {
 });
 
 outputEl.addEventListener("pointerdown", (event) => {
-  if (!manualDrawMode || !scanState || !["image", "pdf"].includes(scanState.document.kind)) return;
+  if (!scanState || !["image", "pdf"].includes(scanState.document.kind)) return;
+  const manualBox = event.target instanceof Element ? event.target.closest(".manual-box") : null;
+  if (manualBox instanceof HTMLElement) {
+    selectedManualFindingId = manualBox.dataset.findingId || null;
+    const overlay = manualBox.closest(".output-overlay");
+    if (!(overlay instanceof HTMLElement) || !selectedManualFindingId) {
+      renderVisualOverlays();
+      syncImageToolState();
+      return;
+    }
+    const pageNumber = Number(overlay.dataset.pageNumber || "1");
+    const image = overlay.parentElement?.querySelector("img");
+    if (!(image instanceof HTMLImageElement)) {
+      renderVisualOverlays();
+      syncImageToolState();
+      return;
+    }
+    const rect = overlay.getBoundingClientRect();
+    const pageInfo = scanState.document.kind === "pdf"
+      ? scanState.document.pages.find((page) => page.pageNumber === pageNumber)
+      : { width: scanState.document.width, height: scanState.document.height };
+    const naturalWidth = pageInfo?.width || image.naturalWidth || 1;
+    const naturalHeight = pageInfo?.height || image.naturalHeight || 1;
+    const finding = scanState.findings.find((item) => item.id === selectedManualFindingId);
+    const box = finding?.context?.bbox;
+    if (box) {
+      manualDragState = {
+        findingId: selectedManualFindingId,
+        pageNumber,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        originalBox: { ...box },
+        scaleX: naturalWidth / rect.width,
+        scaleY: naturalHeight / rect.height,
+        pageWidth: naturalWidth,
+        pageHeight: naturalHeight,
+      };
+    }
+    renderVisualOverlays();
+    syncImageToolState();
+    return;
+  }
+  if (!manualDrawMode) {
+    selectedManualFindingId = null;
+    manualDragState = null;
+    renderVisualOverlays();
+    syncImageToolState();
+    return;
+  }
   const overlay = event.target instanceof Element ? event.target.closest(".output-overlay") : null;
   if (!(overlay instanceof HTMLElement)) return;
   const rect = overlay.getBoundingClientRect();
@@ -780,6 +885,23 @@ outputEl.addEventListener("pointerdown", (event) => {
 });
 
 outputEl.addEventListener("pointermove", (event) => {
+  if (manualDragState && scanState) {
+    const deltaX = (event.clientX - manualDragState.startClientX) * manualDragState.scaleX;
+    const deltaY = (event.clientY - manualDragState.startClientY) * manualDragState.scaleY;
+    const box = manualDragState.originalBox;
+    const width = box.x1 - box.x0;
+    const height = box.y1 - box.y0;
+    const x0 = Math.min(Math.max(0, box.x0 + deltaX), Math.max(0, manualDragState.pageWidth - width));
+    const y0 = Math.min(Math.max(0, box.y0 + deltaY), Math.max(0, manualDragState.pageHeight - height));
+    updateManualFindingBox(manualDragState.findingId, {
+      x0,
+      y0,
+      x1: x0 + width,
+      y1: y0 + height,
+    });
+    renderVisualOverlays();
+    return;
+  }
   if (!manualDrawMode || !manualBoxDraft) return;
   const overlay = outputEl.querySelector(`.output-overlay[data-page-number="${manualBoxDraft.pageNumber}"]`);
   if (!(overlay instanceof HTMLElement)) return;
@@ -794,6 +916,13 @@ outputEl.addEventListener("pointermove", (event) => {
 });
 
 outputEl.addEventListener("pointerup", () => {
+  if (manualDragState) {
+    manualDragState = null;
+    refreshOutputFromSelection("Moved the selected blackout box.").catch((error) => setStatus(outputStatus, `Refresh failed: ${error.message}`, "error"));
+    renderVisualOverlays();
+    syncImageToolState();
+    return;
+  }
   if (!manualDrawMode || !manualBoxDraft || !scanState || !["image", "pdf"].includes(scanState.document.kind)) return;
   const overlay = outputEl.querySelector(`.output-overlay[data-page-number="${manualBoxDraft.pageNumber}"]`);
   const image = overlay?.parentElement?.querySelector("img");

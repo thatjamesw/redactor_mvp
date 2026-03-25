@@ -64,7 +64,7 @@
           </div>
           <div class="stack">
             <label class="label" for="file-input">Upload File</label>
-            <input id="file-input" type="file" accept="image/*,.txt,.csv,.tsv,.json,.yaml,.yml,.xlsx,.pdf,text/plain,text/csv,application/json,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+            <input id="file-input" type="file" accept="image/*,.txt,.csv,.tsv,.json,.yaml,.yml,.xlsx,.pdf,.docx,text/plain,text/csv,application/json,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
           </div>
           <div class="stack">
             <label class="label" for="mode-select">Output Mode</label>
@@ -120,7 +120,7 @@
 
         <div class="stack">
           <label class="label" for="text-input">Content</label>
-          <textarea id="text-input" placeholder="Paste logs, configs, tickets, payloads, CSV rows, JSON, YAML, or plain text here. You can also paste an image from your clipboard. Upload .xlsx or .pdf files for structured document handling."></textarea>
+          <textarea id="text-input" placeholder="Paste logs, configs, tickets, payloads, CSV rows, JSON, YAML, or plain text here. You can also paste an image from your clipboard. Upload .xlsx, .pdf, or .docx files for structured document handling."></textarea>
         </div>
 
         <div class="button-row">
@@ -184,8 +184,9 @@
           <div id="output-risk" class="risk-banner">Run a scan to see whether anything is still outside the current output.</div>
           <div id="image-tools" class="image-tools hidden">
             <button id="manual-box-button" class="ghost">Draw blackout boxes</button>
+            <button id="delete-manual-box-button" class="ghost" disabled>Delete selected box</button>
             <button id="clear-manual-boxes-button" class="ghost" disabled>Clear manual boxes</button>
-            <div class="inline-note">Use manual boxes when OCR misses a face, signature, or region you still want removed.</div>
+            <div class="inline-note">Use manual boxes when OCR misses a face, signature, or region you still want removed. Click a box to select and move it.</div>
           </div>
           <div id="output-status" class="status"></div>
           <div id="output-note" class="inline-note">Output formatting notes will appear here once content has been processed.</div>
