@@ -77,6 +77,18 @@ function collapseNestedFindings(findings) {
     }));
 }
 
+function collapseDuplicateRanges(findings) {
+  const bestByRange = new Map();
+  for (const finding of findings) {
+    const key = `${finding.start}:${finding.end}`;
+    const current = bestByRange.get(key);
+    if (!current || finding.confidence > current.confidence || (finding.confidence === current.confidence && finding.label < current.label)) {
+      bestByRange.set(key, finding);
+    }
+  }
+  return [...bestByRange.values()];
+}
+
 function visitNodes(node, onNode) {
   if (!node || typeof node !== "object") return;
   onNode(node);
@@ -126,6 +138,61 @@ function markdownTableFindings(source, options, kind) {
   return findings;
 }
 
+function headerlessPipeRowFindings(source, options, kind) {
+  const findings = [];
+  const lines = source.split(/\r?\n/);
+  let offset = 0;
+
+  for (const line of lines) {
+    const lineStart = offset;
+    offset += line.length + 1;
+
+    if ((line.match(/\|/g) || []).length < 6) continue;
+    if (/^\s*\|?\s*:?-{2,}:?/.test(line)) continue;
+
+    const cells = line.split("|").map((cell) => cell.trim());
+    if (cells.length < 5) continue;
+
+    const cellMeta = [];
+    let searchFrom = 0;
+    for (const rawCell of cells) {
+      if (!rawCell) continue;
+      const index = line.indexOf(rawCell, searchFrom);
+      if (index === -1) continue;
+      cellMeta.push({
+        text: rawCell,
+        start: lineStart + index,
+      });
+      searchFrom = index + rawCell.length;
+    }
+
+    const hasEmail = cellMeta.some((cell) => /^[A-Za-z0-9._%+\-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,63}$/.test(cell.text));
+    const hasPhone = cellMeta.some((cell) => /^[+\d(][\d\s().-]{6,}$/.test(cell.text));
+    if (!hasEmail && !hasPhone) continue;
+
+    for (const cell of cellMeta) {
+      if (!/^[A-ZÅÄÖ][A-Za-zÅÄÖåäö.'-]+(?:\s+[A-ZÅÄÖ][A-Za-zÅÄÖåäö.'-]+){1,3}$/.test(cell.text)) continue;
+      if (/^(?:CTO|IT|CEO|CFO|COO|Project Manager|Manager|Owner|Service Owner|Customer primary|Customer secondary)$/i.test(cell.text)) continue;
+      findings.push({
+        id: `f-h-${findings.length + 1}`,
+        label: "PERSON",
+        category: "identity",
+        confidence: 0.8,
+        start: cell.start,
+        end: cell.start + cell.text.length,
+        original: cell.text,
+        reasoning: ["pipe_row_person_context"],
+        context: {
+          kind,
+          previewPath: "pipe_row",
+        },
+      });
+    }
+  }
+
+  return findings;
+}
+
 export function prepareTextDocument(text, name = "pasted.txt") {
   return {
     kind: "text",
@@ -141,10 +208,11 @@ export function prepareTextDocument(text, name = "pasted.txt") {
 }
 
 export function scanTextDocument(document, options = {}) {
-  const findings = collapseNestedFindings([
+  const findings = collapseNestedFindings(collapseDuplicateRanges([
     ...scanTextValue(document.content, options, { kind: document.kind }),
+    ...headerlessPipeRowFindings(document.content, options, document.kind),
     ...markdownTableFindings(document.content, options, document.kind),
-  ]).sort((left, right) => left.start - right.start || right.end - left.end || left.label.localeCompare(right.label));
+  ])).sort((left, right) => left.start - right.start || right.end - left.end || left.label.localeCompare(right.label));
   const deduped = findings.filter((item, index) => {
     const previous = findings[index - 1];
     return !previous || previous.start !== item.start || previous.end !== item.end || previous.label !== item.label;

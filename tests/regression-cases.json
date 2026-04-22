@@ -75,5 +75,36 @@
       "| Customer secondary | [REDACTED] | IT | [REDACTED] | [REDACTED] | - |"
     ],
     "minFindings": 6
+  },
+  {
+    "name": "headerless pipe rows infer names from nearby email and phone",
+    "fileName": "contacts.md",
+    "input": "| Customer primary | Jarmo Kareisto | CTO | jarmo.kareisto@proliitto.fi | +358407327122 | - |\n| Customer secondary | Esa Heikkinen | IT | esa.heikkinen@proliitto.fi | +358407327122 | - |\n| Service Owner | Totti Brunila | totti.brunila@proliitto.fi | Project Manager | - | - |\n",
+    "expectAbsent": [
+      "Jarmo Kareisto",
+      "Esa Heikkinen",
+      "Totti Brunila",
+      "jarmo.kareisto@proliitto.fi",
+      "esa.heikkinen@proliitto.fi",
+      "totti.brunila@proliitto.fi"
+    ],
+    "expectPresent": [
+      "| Customer primary | [REDACTED] | CTO | [REDACTED] | +[REDACTED] | - |",
+      "| Customer secondary | [REDACTED] | IT | [REDACTED] | +[REDACTED] | - |",
+      "| Service Owner | [REDACTED] | [REDACTED] | Project Manager | - | - |"
+    ],
+    "minFindings": 8
+  },
+  {
+    "name": "author column is treated as a person field in markdown tables",
+    "fileName": "changelog.md",
+    "input": "| Date | Version | Change | Author |\n| -- | -- | -- | -- |\n| 2026-03-13 | 2.0 | Full restructure | James Wright |\n",
+    "expectAbsent": [
+      "James Wright"
+    ],
+    "expectPresent": [
+      "| 2026-03-13 | 2.0 | Full restructure | [REDACTED] |"
+    ],
+    "minFindings": 1
   }
 ]

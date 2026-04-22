@@ -42,7 +42,7 @@ const STREET_ADDRESS_NAME_FIRST_WITH_NUMBER = new RegExp(`\\b[A-Za-zÅÄÖåäö
 const NAME_CONTEXT_PATTERN = /\b(?:name|customer|client|employee|user|contact|owner|recipient)\s*[:=-]\s*([A-ZÅÄÖ][A-Za-zÅÄÖåäö.'-]+(?:\s+[A-ZÅÄÖ][A-Za-zÅÄÖåäö.'-]+){1,3})/gi;
 const ADDRESS_CONTEXT_PATTERN = new RegExp(`\\b(?:address|street|osoite|addr)\\s*[:=-]\\s*((?:\\d{1,6}[A-Za-z]?(?:[-/]\\d+)?\\s+[A-Za-z0-9.'\\- ]+\\s${ADDRESS_SUFFIX}|[A-Za-zÅÄÖåäö0-9.'\\-]+(?:\\s+[A-Za-zÅÄÖåäö0-9.'\\-]+)*\\s${ADDRESS_SUFFIX}\\s+\\d{1,6}[A-Za-z]?(?:\\s+[A-Za-z]\\s+\\d+)?(?:\\s+\\d+[A-Za-z]?)?))\\b`, "gi");
 
-const NAME_KEY = /(?:^|[_\-. ])(?:name|full name|full_name|first name|last name|owner|contact)$/i;
+const NAME_KEY = /^(?:name|full name|full_name|first name|last name|contact|author)$/i;
 const PLACE_KEY = /(?:^|[_\-. ])(?:city|town|location|country|region|address)$/i;
 const ORG_KEY = /(?:^|[_\-. ])(?:company|organisation|organization|employer|business|tenant)$/i;
 const PHONE_KEY = /(?:^|[_\-. ])(?:phone|telephone|mobile|cell|fax|contact number)$/i;
