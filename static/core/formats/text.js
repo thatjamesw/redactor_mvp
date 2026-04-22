@@ -1,10 +1,20 @@
-import { fromMarkdown } from "mdast-util-from-markdown";
-import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
-import { gfmTable } from "micromark-extension-gfm-table";
-
 import { applyTextReplacements } from "../replacements.js";
 import { annotateFindings, detectLineEnding, summarise } from "../utils.js";
 import { scanTextValue } from "../detectors.js";
+
+const markdownModule = typeof document === "undefined"
+  ? await import("mdast-util-from-markdown")
+  : await import("../../vendor/markdown/markdown-parser.bundle.mjs");
+const markdownTableModule = typeof document === "undefined"
+  ? await import("mdast-util-gfm-table")
+  : markdownModule;
+const micromarkTableModule = typeof document === "undefined"
+  ? await import("micromark-extension-gfm-table")
+  : markdownModule;
+
+const { fromMarkdown } = markdownModule;
+const { gfmTableFromMarkdown } = markdownTableModule;
+const { gfmTable } = micromarkTableModule;
 
 function nodePlainText(node) {
   if (!node) return "";
