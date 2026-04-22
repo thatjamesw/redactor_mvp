@@ -207,7 +207,7 @@ export function scanTextValue(text, options = {}, context = {}) {
     const trimmed = content.trim();
     if (trimmed) {
       if (categoryEnabled(options, "PERSON") && NAME_KEY.test(context.keyHint) && /^[A-Za-z][A-Za-z ,.'-]{1,60}$/.test(trimmed)) {
-        addFinding(findings, "PERSON", 0.77, 0, content.length, content, ["field_hint:name"], context);
+        addFinding(findings, "PERSON", 0.84, 0, content.length, content, ["field_hint:name"], context);
       } else if (categoryEnabled(options, "EMAIL") && EMAIL_KEY.test(context.keyHint) && /^[A-Za-z0-9._%+\-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,63}$/.test(trimmed)) {
         addFinding(findings, "EMAIL", 0.99, 0, content.length, content, ["field_hint:email"], context);
       } else if (categoryEnabled(options, "PLACE") && PLACE_KEY.test(context.keyHint) && /^[A-Za-z][A-Za-z ,.'-]{1,60}$/.test(trimmed)) {

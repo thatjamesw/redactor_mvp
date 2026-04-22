@@ -59,5 +59,21 @@
       "[REDACTED].de"
     ],
     "minFindings": 1
+  },
+  {
+    "name": "markdown table uses headers to redact names and emails",
+    "fileName": "runbook.md",
+    "input": "| Type | Name | Role | Email | Phone | Notes |\n| -- | -- | -- | -- | -- | -- |\n| Customer primary | Jarmo Kareisto | CTO | jarmo.kareisto@proliitto.fi | +358407327122 | - |\n| Customer secondary | Esa Heikkinen | IT | esa.heikkinen@proliitto.fi | +358407327122 | - |\n",
+    "expectAbsent": [
+      "Jarmo Kareisto",
+      "Esa Heikkinen",
+      "jarmo.kareisto@proliitto.fi",
+      "esa.heikkinen@proliitto.fi"
+    ],
+    "expectPresent": [
+      "| Customer primary | [REDACTED] | CTO | [REDACTED] | [REDACTED] | - |",
+      "| Customer secondary | [REDACTED] | IT | [REDACTED] | [REDACTED] | - |"
+    ],
+    "minFindings": 6
   }
 ]
