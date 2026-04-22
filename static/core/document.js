@@ -11,6 +11,16 @@ function looksLikeYaml(text) {
   return /^[\s\S]*:\s[\s\S]*$/m.test(text) && /\n/.test(text);
 }
 
+function looksLikeMarkdown(text) {
+  if (!/\n/.test(text)) return false;
+  if (/^\s{0,3}#{1,6}\s+\S/m.test(text)) return true;
+  if (/^\|.+\|\s*$/m.test(text) && /^\|?\s*:?-{2,}:?(?:\s*\|\s*:?-{2,}:?)+\s*\|?\s*$/m.test(text)) return true;
+  if (/^\s*[-*+]\s+\S/m.test(text)) return true;
+  if (/^\s*\d+\.\s+\S/m.test(text)) return true;
+  if (/^\s*```/m.test(text)) return true;
+  return false;
+}
+
 export async function prepareDocument({ textInput, fileName, fileMeta }) {
   if (fileMeta?.kind === "image") return prepareImageDocument(fileMeta);
   if (fileMeta?.kind === "docx") return prepareDocxDocument(fileMeta);
@@ -36,7 +46,7 @@ export async function prepareDocument({ textInput, fileName, fileMeta }) {
         void error;
       }
     }
-    if (looksLikeYaml(rawText)) return prepareYamlDocument(rawText, "pasted.yaml");
+    if (!looksLikeMarkdown(rawText) && looksLikeYaml(rawText)) return prepareYamlDocument(rawText, "pasted.yaml");
     if (/\t/.test(rawText) && /\n/.test(rawText)) return prepareDelimitedDocument(rawText, "\t", "pasted.tsv");
     if (/,[^\n]+/.test(rawText) && /\n/.test(rawText)) return prepareDelimitedDocument(rawText, ",", "pasted.csv");
   }

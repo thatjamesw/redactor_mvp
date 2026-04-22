@@ -106,5 +106,17 @@
       "| 2026-03-13 | 2.0 | Full restructure | [REDACTED] |"
     ],
     "minFindings": 1
+  },
+  {
+    "name": "pasted markdown is not misclassified as yaml",
+    "input": "# Runbook\n\n## Contacts\n\n| Type | Name | Email |\n| -- | -- | -- |\n| Customer primary | Jarmo Kareisto | jarmo.kareisto@proliitto.fi |\n\n### Trigger\n\nTrigger:\n- customer outage\nMitigation:\n- rollback\n",
+    "expectAbsent": [
+      "Jarmo Kareisto",
+      "jarmo.kareisto@proliitto.fi"
+    ],
+    "expectPresent": [
+      "| Customer primary | [REDACTED] | [REDACTED] |"
+    ],
+    "minFindings": 2
   }
 ]
