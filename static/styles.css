@@ -220,7 +220,11 @@ body{
 }
 
 .input-layout{
-  grid-template-columns:260px minmax(0,1fr);
+  grid-template-columns:1fr;
+}
+
+.input-layout .upload-control{
+  max-width:440px;
 }
 
 .upload-control{
