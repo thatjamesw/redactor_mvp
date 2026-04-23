@@ -77,6 +77,34 @@
     "minFindings": 4
   },
   {
+    "name": "plain text contact block is not misclassified as csv",
+    "threshold": "medium",
+    "input": "james wright, j4m3sy@me.com, helsinki, finland\ntom smith\n",
+    "expectPresent": [
+      "[REDACTED], [REDACTED], [REDACTED], [REDACTED]\ntom smith\n"
+    ],
+    "expectAbsent": [
+      "james wright",
+      "j4m3sy@me.com",
+      "helsinki",
+      "finland"
+    ],
+    "minFindings": 4
+  },
+  {
+    "name": "ambiguous pasted csv can still use structured hints when coverage is better",
+    "threshold": "medium",
+    "input": "Name,Email\nJames Wright,j4m3sy@me.com\n",
+    "expectPresent": [
+      "[REDACTED],[REDACTED]\n"
+    ],
+    "expectAbsent": [
+      "James Wright",
+      "j4m3sy@me.com"
+    ],
+    "minFindings": 2
+  },
+  {
     "name": "identity seed propagation catches mixed-case and leetspeak variants",
     "fileName": "notes.txt",
     "threshold": "medium",

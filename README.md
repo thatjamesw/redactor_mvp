@@ -74,6 +74,8 @@ Some important behavior:
 - Headers themselves are not redacted unless they are actual findings
 - Identity propagation is seeded from higher-confidence findings first, then reused to catch nearby variants like `James`, `jAmEs`, or `j4m3s`
 - Weak structured patterns are boosted by context instead of automatically trusted
+- Pasted input is biased toward plain-text scanning unless the structured shape is clearly stronger
+- Ambiguous pasted input can still fall back to CSV, TSV, or YAML scanning when that materially improves coverage
 
 This keeps the browser build explainable and testable while avoiding overly broad fuzzy matching.
 
@@ -148,6 +150,7 @@ This covers the structured-redaction and overlap bugs we already hit, including:
 - full international email redaction
 - no partial leftovers like `[REDACTED].cn`
 - JSON/YAML/CSV shape-preserving redaction paths
+- ambiguous pasted content classification
 - markdown tables and header-driven semantic hints
 - identity seed propagation across case and leetspeak variants
 - `.xlsx` and `.pdf` regression coverage

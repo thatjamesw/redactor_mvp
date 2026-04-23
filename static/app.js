@@ -432,6 +432,23 @@ function currentOptions() {
   };
 }
 
+function broadDiagnosticOptions() {
+  return {
+    strictEmail: true,
+    detectNames: true,
+    detectFaces: false,
+    aggressiveImageDocs: false,
+    imageMode: "standard",
+    enabledCategories: {
+      pii: true,
+      identity: true,
+      financial: true,
+      network: true,
+      secrets: true,
+    },
+  };
+}
+
 async function currentDocument() {
   const sourceText = fileState?.kind === "text" ? fileState.text : textInput.value;
   const fileName = fileState ? fileState.name : undefined;
@@ -686,6 +703,7 @@ async function refreshOutputFromSelection(statusMessage = "") {
 
 async function runScan() {
   const documentModel = await currentDocument();
+  const options = currentOptions();
   manualDrawMode = false;
   manualBoxDraft = null;
   if (documentModel.kind === "image") {
@@ -693,11 +711,37 @@ async function runScan() {
   } else if (documentModel.kind === "pdf") {
     setStatus(inputStatus, "Rendering and scanning PDF pages locally in your browser.", "warn");
   }
-  scanState = await scanDocument(documentModel, currentOptions());
+  scanState = await scanDocument(documentModel, options);
   updateSelectionFromThreshold();
   renderFormatNote(scanState.formatInfo, formatNote);
   await refreshOutputFromSelection();
-  setStatus(inputStatus, `Scan complete. ${scanState.summary.total} findings detected locally in your browser.`, "success");
+
+  let scanMessage = `Scan complete. ${scanState.summary.total} findings detected locally in your browser.`;
+  let scanType = "success";
+
+  if (scanState.autoDetection?.source === "fallback") {
+    scanMessage += ` Auto-detected as ${scanState.autoDetection.selectedKind} after a plain-text scan found nothing.`;
+  } else if (scanState.document?.autoDetection?.kind && scanState.document?.autoDetection?.kind !== scanState.document.kind) {
+    scanMessage += ` Input was treated as ${scanState.document.autoDetection.kind}.`;
+  }
+
+  if (scanState.summary.total === 0 && ["text", "yaml", "table", "json", "docx", "xlsx"].includes(documentModel.kind)) {
+    const broadScan = await scanDocument(documentModel, broadDiagnosticOptions());
+    if (broadScan.summary.total > 0) {
+      const mutedAreas = [];
+      const categories = currentEnabledCategories();
+      if (!options.detectNames || categories.identity === false) mutedAreas.push("names and places");
+      if (categories.pii === false) mutedAreas.push("emails and direct identifiers");
+      if (categories.financial === false) mutedAreas.push("financial data");
+      if (categories.network === false) mutedAreas.push("network identifiers");
+      if (categories.secrets === false) mutedAreas.push("secrets");
+      const mutedLabel = mutedAreas.length ? ` The current scan settings are narrowing or disabling ${mutedAreas.join(", ")}.` : "";
+      scanMessage = `Scan complete. 0 findings detected with the current settings, but a broader scan would have found ${broadScan.summary.total}.${mutedLabel}`;
+      scanType = "warn";
+    }
+  }
+
+  setStatus(inputStatus, scanMessage, scanType);
   setStatus(outputStatus, "Review the findings or copy the current output right away.", "");
 }
 
