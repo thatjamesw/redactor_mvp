@@ -11,49 +11,56 @@
 </head>
 <body>
   <main class="shell">
-    <section class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow">Local-first LLM hygiene</p>
-        <h1>Paste risky data. Copy back something safe.</h1>
-        <p class="lede">Redactor runs entirely in the browser, helps you catch common PII and secrets, and gives you a fast “LLM-safe copy” path without a backend.</p>
+    <header class="masthead" aria-label="Product introduction">
+      <div class="masthead-topline">
+        <p class="brand-mark">GenAI Redactor</p>
       </div>
-      <div class="hero-chips">
-        <span class="chip">Static app</span>
-        <span class="chip">GitHub Pages ready</span>
-        <span class="chip">Paste, review, copy, export</span>
-        <span class="chip">No outbound network calls by default</span>
+      <div class="masthead-main">
+        <div class="masthead-copy">
+          <h1>Redact text and files before sharing them with AI.</h1>
+          <p class="masthead-lede">Scan for personal data and secrets, review what was found, then copy or export a cleaner result.</p>
+          <p class="masthead-meta">Local processing only. Review before you share.</p>
+          <div class="hero-actions">
+            <button id="safe-copy-button" class="primary">LLM-safe copy</button>
+            <button id="scan-button" class="secondary">Scan only</button>
+            <button id="apply-button" class="ghost">Refresh output</button>
+          </div>
+        </div>
       </div>
-    </section>
+    </header>
 
-    <section class="workflow-strip">
+    <section class="workflow-strip" aria-label="Core steps">
       <article class="workflow-step">
         <span class="workflow-kicker">Step 1</span>
-        <strong>Choose a safe path</strong>
-        <p>Pick a preset, paste or upload your content, then scan.</p>
+        <strong>Choose your scan</strong>
+        <p>Pick the preset, output mode, confidence level, and categories you want to check.</p>
       </article>
       <article class="workflow-step">
         <span class="workflow-kicker">Step 2</span>
-        <strong>Review what matters</strong>
-        <p>See what was detected, what was auto-selected, and what stayed out.</p>
+        <strong>Add content</strong>
+        <p>Paste text or choose a file, then keep working in the same view.</p>
       </article>
       <article class="workflow-step">
         <span class="workflow-kicker">Step 3</span>
+        <strong>Review findings</strong>
+        <p>Inspect what was detected and decide what should be included in the cleaned result.</p>
+      </article>
+      <article class="workflow-step">
+        <span class="workflow-kicker">Step 4</span>
         <strong>Copy or export</strong>
-        <p>Send LLM-safe text to the clipboard or download a cleaned file.</p>
+        <p>Copy the cleaned output or export a redacted file when you are ready.</p>
       </article>
     </section>
 
-    <section class="panel primary-flow">
-      <div class="panel-head">
-        <div>
-          <h2>Step 1 · Configure And Scan</h2>
-          <p>The fastest path is: pick a workflow, paste content, click <strong>LLM-safe copy</strong>, and only drop into review if you want to tune the output.</p>
+    <section class="flow" id="workflow-grid">
+      <section class="panel primary-flow flow-step">
+        <div class="step-marker">
+          <span class="section-label">Step 1</span>
+          <h2>Choose your scan.</h2>
         </div>
-      </div>
-      <div class="panel-body">
-        <div class="control-grid">
+        <div class="step-layout">
           <div class="stack">
-            <label class="label" for="preset-select">Workflow Preset</label>
+            <label class="label" for="preset-select">Workflow preset</label>
             <select id="preset-select">
               <option value="llm_safe">LLM-safe (recommended)</option>
               <option value="paranoid">Paranoid redaction</option>
@@ -63,25 +70,21 @@
             </select>
           </div>
           <div class="stack">
-            <label class="label" for="file-input">Upload File</label>
-            <input id="file-input" type="file" accept="image/*,.txt,.csv,.tsv,.json,.yaml,.yml,.xlsx,.pdf,.docx,text/plain,text/csv,application/json,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-          </div>
-          <div class="stack">
-            <label class="label" for="mode-select">Output Mode</label>
+            <label class="label" for="mode-select">Output mode</label>
             <select id="mode-select">
               <option value="redact">Redact</option>
               <option value="pseudo">Pseudonymise</option>
             </select>
           </div>
           <div class="stack">
-            <label class="label" for="confidence-select">Auto-Select</label>
+            <label class="label" for="confidence-select">Auto-select</label>
             <select id="confidence-select">
               <option value="high">High confidence only</option>
               <option value="medium">High and medium confidence</option>
             </select>
           </div>
           <div class="stack">
-            <label class="label" for="image-mode-select">Image Workflow</label>
+            <label class="label" for="image-mode-select">Image workflow</label>
             <select id="image-mode-select">
               <option value="standard">Standard image review</option>
               <option value="document_safe">Identity document mode</option>
@@ -89,77 +92,81 @@
           </div>
         </div>
 
-        <div class="scan-config">
-          <section class="config-card">
-            <div class="config-head">
-              <h3>Detection Style</h3>
-              <p>These affect how aggressively the scanner interprets text and images.</p>
-            </div>
-            <div class="scope-list">
-              <label class="scope-pill"><input id="strict-email" type="checkbox" checked /><span>Strict email matching</span><small>Prefer full email addresses and avoid soft fragments.</small></label>
-              <label class="scope-pill"><input id="detect-names" type="checkbox" checked /><span>Heuristic names and places</span><small>Try to catch person, place, and organisation-like text.</small></label>
-              <label class="scope-pill"><input id="detect-faces" type="checkbox" checked /><span>Redact human faces in images</span><small>Use browser face detection, with a document-photo fallback when needed.</small></label>
-            </div>
-            <div class="helper-note">Identity document mode uses broader region redaction for passports and IDs.</div>
-          </section>
-
-          <section class="config-card">
-            <div class="config-head">
-              <h3>Detection Scope</h3>
-              <p>Choose the risk areas you want to scan. Leave everything on for a broad pass, or narrow the scope when you want fewer false positives.</p>
-            </div>
-            <div class="scope-list">
-              <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="pii" checked /><span>Core PII</span><small>Email, phone, SSN, passport, VIN</small></label>
-              <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="identity" checked /><span>Identity</span><small>Names, places, organisations, street addresses</small></label>
-              <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="financial" checked /><span>Financial</span><small>Cards and tax IDs</small></label>
-              <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="network" checked /><span>Network</span><small>IPs, CIDRs, MAC addresses</small></label>
-              <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="secrets" checked /><span>Secrets</span><small>API keys, JWTs, AWS keys, long tokens</small></label>
-            </div>
-          </section>
-        </div>
-
-        <div class="stack">
-          <label class="label" for="text-input">Content</label>
-          <textarea id="text-input" placeholder="Paste logs, configs, tickets, payloads, CSV rows, JSON, YAML, or plain text here. You can also paste an image from your clipboard. Upload .xlsx, .pdf, or .docx files for structured document handling."></textarea>
-        </div>
-
-        <div class="button-row">
-          <button id="safe-copy-button" class="primary">LLM-safe copy</button>
-          <button id="scan-button" class="secondary">Scan only</button>
-          <button id="apply-button" class="ghost">Refresh output</button>
-          <button id="copy-button" class="ghost" disabled>Copy output</button>
-          <button id="download-button" class="ghost" disabled>Export file</button>
-        </div>
-
-        <div id="input-status" class="status"></div>
-        <div id="file-summary" class="inline-note">No file selected.</div>
-        <div id="format-note" class="inline-note">Format guarantees will appear here after the app recognises your input.</div>
-        <div class="inline-note">Security model: no analytics, no backend, no browser storage for pasted content, and OCR assets are served locally from this repo.</div>
-        <div class="inline-note">Use <strong>Secure wipe</strong> when you want to clear the current session, shut down OCR state, and drop in-memory file and output buffers as aggressively as the browser allows.</div>
-      </div>
-    </section>
-
-    <section class="grid" id="workflow-grid">
-      <section class="panel review-panel">
-        <div class="panel-head">
-          <div>
-            <h2>Step 2 · Review</h2>
-            <p>Focus on what changed the output: what was detected, what the app selected by default, and what you chose to keep or exclude.</p>
+        <div class="subsection">
+          <div class="subsection-head">
+            <h3>Detection style</h3>
+            <p>Change how aggressively the scanner interprets text and images.</p>
           </div>
-          <div class="button-row">
-            <input id="filter-search" type="search" placeholder="Filter by label, category, path, or value" />
-            <button id="select-all-button" class="ghost">Select all</button>
-            <button id="select-none-button" class="ghost">Select none</button>
-            <button id="review-expand-button" class="ghost">Expand review</button>
+          <div class="scope-list">
+            <label class="scope-pill"><input id="strict-email" type="checkbox" checked /><span>Strict email matching</span><small>Prefer full addresses and avoid loose fragments.</small></label>
+            <label class="scope-pill"><input id="detect-names" type="checkbox" checked /><span>Names, places, and organisations</span><small>Catch identity signals beyond structured tokens.</small></label>
+            <label class="scope-pill"><input id="detect-faces" type="checkbox" checked /><span>Faces in images</span><small>Use local browser detection with document-photo fallback support.</small></label>
+          </div>
+        </div>
+
+        <div class="subsection">
+          <div class="subsection-head">
+            <h3>Detection scope</h3>
+            <p>Choose what to check for based on the content you are working with.</p>
+          </div>
+          <div class="scope-list">
+            <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="pii" checked /><span>Core PII</span><small>Email, phone, SSN, passport, VIN</small></label>
+            <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="identity" checked /><span>Identity</span><small>Names, places, organisations, street addresses</small></label>
+            <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="financial" checked /><span>Financial</span><small>Cards and tax IDs</small></label>
+            <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="network" checked /><span>Network</span><small>IPs, CIDRs, MAC addresses</small></label>
+            <label class="scope-pill"><input class="category-toggle" type="checkbox" data-category="secrets" checked /><span>Secrets</span><small>API keys, JWTs, AWS keys, and long tokens</small></label>
+          </div>
+          <div class="helper-note">Identity document mode uses broader region redaction for passports, IDs, and photo-based documents.</div>
+        </div>
+      </section>
+
+      <section class="panel flow-step">
+        <div class="step-marker">
+          <span class="section-label">Step 2</span>
+          <h2>Add content.</h2>
+        </div>
+        <div class="step-layout input-layout">
+          <div class="stack">
+            <label class="label" for="file-input">Upload file</label>
+            <div class="upload-control">
+              <label for="file-input" class="upload-trigger">Choose file</label>
+              <div class="upload-meta">Text, CSV, JSON, YAML, XLSX, PDF, DOCX, or image</div>
+              <input id="file-input" class="file-input-native" type="file" accept="image/*,.txt,.csv,.tsv,.json,.yaml,.yml,.xlsx,.pdf,.docx,text/plain,text/csv,application/json,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            </div>
+          </div>
+          <div class="stack content-stack">
+            <label class="label" for="text-input">Content</label>
+            <textarea id="text-input" placeholder="Paste logs, configs, tickets, payloads, CSV rows, JSON, YAML, or plain text here. You can also paste an image from your clipboard. Upload .xlsx, .pdf, or .docx files for structured document handling."></textarea>
+          </div>
+        </div>
+        <div id="input-status" class="status"></div>
+        <div class="notice-strip">
+          <div id="file-summary" class="inline-note">No file selected.</div>
+          <div id="format-note" class="inline-note">Format guarantees will appear here after the app recognises your input.</div>
+          <div class="inline-note">Your content stays in the browser. No backend, analytics, or browser storage for pasted text.</div>
+        </div>
+      </section>
+
+      <section class="panel review-panel flow-step">
+        <div class="panel-head">
+          <div class="step-marker">
+            <span class="section-label">Step 3</span>
+            <h2>Review findings.</h2>
           </div>
         </div>
         <div class="panel-body">
+          <div class="review-toolbar">
+            <input id="filter-search" type="search" placeholder="Filter by label, category, path, or value" />
+            <div class="button-row">
+              <button id="select-all-button" class="ghost">Select all</button>
+              <button id="select-none-button" class="ghost">Select none</button>
+              <button id="review-expand-button" class="ghost">Expand review</button>
+            </div>
+          </div>
           <div class="summary">
             <div class="metric"><strong id="metric-total">0</strong><span>Total findings</span></div>
             <div class="metric"><strong id="metric-high">0</strong><span>High confidence</span></div>
             <div class="metric"><strong id="metric-medium">0</strong><span>Medium confidence</span></div>
-          </div>
-          <div class="summary summary-trust">
             <div class="metric"><strong id="metric-auto">0</strong><span>Auto-selected</span></div>
             <div class="metric"><strong id="metric-current">0</strong><span>In current output</span></div>
             <div class="metric"><strong id="metric-left">0</strong><span>Left unselected</span></div>
@@ -170,20 +177,22 @@
         </div>
       </section>
 
-      <section class="panel output-panel">
+      <section class="panel output-panel flow-step">
         <div class="panel-head">
-          <div>
-            <h2>Step 3 · Output</h2>
-            <p>Use this as the final handoff surface for LLM-safe text, structured exports, or cleaned document images.</p>
+          <div class="step-marker">
+            <span class="section-label">Step 4</span>
+            <h2>Copy or export.</h2>
           </div>
           <div class="button-row">
+            <button id="copy-button" class="ghost" disabled>Copy output</button>
+            <button id="download-button" class="ghost" disabled>Export file</button>
             <button id="output-expand-button" class="ghost">Expand output</button>
           </div>
         </div>
         <div class="panel-body">
           <div class="trust-banner">
-            <strong>Processing stays on this device.</strong>
-            <span>No backend, no analytics, and no cloud handoff during scanning or redaction.</span>
+            <strong>Review the result before you share it.</strong>
+            <span>Use Secure wipe when you are done to clear OCR state, file buffers, and the current session.</span>
           </div>
           <div id="output-risk" class="risk-banner">Run a scan to see whether anything is still outside the current output.</div>
           <div id="image-tools" class="image-tools hidden">
@@ -202,8 +211,8 @@
     <details class="panel benchmark-panel">
       <summary class="benchmark-summary">
         <div>
-          <strong>Coverage Lab</strong>
-          <span>Benchmarks and detector tuning live here, outside the main workflow.</span>
+          <strong>Benchmark tools</strong>
+          <span>Use these checks when you want to test detector coverage.</span>
         </div>
         <span class="summary-button">Benchmark tools</span>
       </summary>
