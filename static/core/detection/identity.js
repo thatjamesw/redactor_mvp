@@ -10,6 +10,14 @@ const CONTACT_SEGMENT_NAME = /^[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}(?
 const CONTACT_SEGMENT_PLACE = /^[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}(?:\s+[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}){0,2}$/;
 const EMAIL_LOOSE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,63}\b/g;
 const IDENTITY_CANDIDATE = /\b[A-Za-zÅÄÖåäö0-9@$][A-Za-zÅÄÖåäö0-9@$.'-]{1,}(?:\s+[A-Za-zÅÄÖåäö0-9@$][A-Za-zÅÄÖåäö0-9@$.'-]{1,}){0,2}\b/g;
+const STANDALONE_NAME_LINE = /^[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}(?:\s+[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}){1,2}$/;
+const NON_NAME_LINE_HINTS = /^(?:project manager|manager|owner|service owner|customer primary|customer secondary|incident response|runbook|rollback|support team|security team|engineering team)$/i;
+const NON_NAME_TOKENS = new Set([
+  "and", "or", "the", "for", "with", "from", "into", "onto", "over", "under",
+  "project", "manager", "service", "owner", "customer", "primary", "secondary",
+  "incident", "response", "rollback", "support", "security", "engineering", "team",
+  "test", "sample", "internal", "external", "local", "browser",
+]);
 const COUNTRY_NAMES = new Set(`
 afghanistan,albania,algeria,andorra,angola,argentina,armenia,australia,austria,azerbaijan,bahamas,bahrain,bangladesh,belarus,belgium,belize,bolivia,bosnia and herzegovina,botswana,brazil,bulgaria,cambodia,cameroon,canada,chile,china,colombia,costa rica,croatia,cyprus,czech republic,denmark,dominican republic,ecuador,egypt,el salvador,estonia,ethiopia,finland,france,georgia,germany,ghana,greece,guatemala,honduras,hong kong,hungary,iceland,india,indonesia,iran,iraq,ireland,israel,italy,jamaica,japan,jordan,kazakhstan,kenya,kuwait,latvia,lebanon,lithuania,luxembourg,malaysia,mexico,moldova,mongolia,morocco,netherlands,new zealand,nigeria,norway,pakistan,panama,peru,philippines,poland,portugal,qatar,romania,russia,saudi arabia,serbia,singapore,slovakia,slovenia,south africa,south korea,spain,sri lanka,sweden,switzerland,taiwan,thailand,tunisia,turkey,ukraine,united arab emirates,united kingdom,uk,united states,usa,uruguay,venezuela,vietnam
 `.trim().split(","));
@@ -49,7 +57,7 @@ function addContactLineIdentityFindings(content, findings, context) {
     offset += line.length + 1;
     if (!line.includes(",")) continue;
     const parts = line.split(",").map((segment) => segment.trim()).filter(Boolean);
-    if (parts.length < 3 || parts.length > 6) continue;
+    if (parts.length < 2 || parts.length > 6) continue;
     const emailIndex = parts.findIndex((segment) => EMAIL_LOOSE.test(segment));
     EMAIL_LOOSE.lastIndex = 0;
     if (emailIndex === -1) continue;
@@ -66,13 +74,35 @@ function addContactLineIdentityFindings(content, findings, context) {
       searchFrom = matchOffset + segment.length;
 
       if (index < emailIndex && CONTACT_SEGMENT_NAME.test(segment)) {
-        addFinding(findings, "PERSON", 0.74, start, end, segment, ["contact_line_name"], context);
+        const confidence = parts.length === 2 ? 0.78 : 0.74;
+        addFinding(findings, "PERSON", confidence, start, end, segment, ["contact_line_name"], context);
         return;
       }
       if (index > emailIndex && (index === countryIndex || index === cityIndex) && CONTACT_SEGMENT_PLACE.test(segment)) {
         addFinding(findings, "PLACE", 0.72, start, end, segment, ["contact_line_place"], context);
       }
     });
+  }
+}
+
+function addStandaloneNameLineFindings(content, findings, context) {
+  const lines = content.split(/\r?\n/);
+  let offset = 0;
+  for (const line of lines) {
+    const lineStart = offset;
+    offset += line.length + 1;
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.includes(",") || trimmed.includes("@") || /\d/.test(trimmed)) continue;
+    if (!STANDALONE_NAME_LINE.test(trimmed)) continue;
+    if (NON_NAME_LINE_HINTS.test(trimmed)) continue;
+
+    const tokens = trimmed.toLowerCase().split(/\s+/);
+    if (tokens.some((token) => NON_NAME_TOKENS.has(token))) continue;
+    if (COUNTRY_NAMES.has(trimmed.toLowerCase())) continue;
+
+    const startOffset = line.indexOf(trimmed);
+    const start = lineStart + Math.max(0, startOffset);
+    addFinding(findings, "PERSON", 0.63, start, start + trimmed.length, trimmed, ["standalone_name_line"], context);
   }
 }
 
@@ -118,6 +148,7 @@ export function scanIdentityFindings(content, options = {}, context = {}, findin
 
   if (options.detectNames && (categoryEnabled(options, "PERSON") || categoryEnabled(options, "PLACE"))) {
     addContactLineIdentityFindings(content, findings, context);
+    if (categoryEnabled(options, "PERSON")) addStandaloneNameLineFindings(content, findings, context);
     propagateIdentitySeeds(content, findings, context, options.identitySeeds || []);
   }
 

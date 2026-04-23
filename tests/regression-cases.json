@@ -77,19 +77,45 @@
     "minFindings": 4
   },
   {
+    "name": "plain text contact line redacts lowercase name with email only",
+    "threshold": "medium",
+    "input": "james wright, j4m3sy@me.com\n",
+    "expectPresent": [
+      "[REDACTED], [REDACTED]\n"
+    ],
+    "expectAbsent": [
+      "james wright",
+      "j4m3sy@me.com"
+    ],
+    "minFindings": 2
+  },
+  {
+    "name": "standalone lowercase full name is detected in plain text",
+    "threshold": "medium",
+    "input": "tom smith\n",
+    "expectPresent": [
+      "[REDACTED]\n"
+    ],
+    "expectAbsent": [
+      "tom smith"
+    ],
+    "minFindings": 1
+  },
+  {
     "name": "plain text contact block is not misclassified as csv",
     "threshold": "medium",
     "input": "james wright, j4m3sy@me.com, helsinki, finland\ntom smith\n",
     "expectPresent": [
-      "[REDACTED], [REDACTED], [REDACTED], [REDACTED]\ntom smith\n"
+      "[REDACTED], [REDACTED], [REDACTED], [REDACTED]\n[REDACTED]\n"
     ],
     "expectAbsent": [
       "james wright",
       "j4m3sy@me.com",
       "helsinki",
-      "finland"
+      "finland",
+      "tom smith"
     ],
-    "minFindings": 4
+    "minFindings": 5
   },
   {
     "name": "ambiguous pasted csv can still use structured hints when coverage is better",
