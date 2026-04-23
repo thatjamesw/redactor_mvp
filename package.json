@@ -22,5 +22,8 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.6.205",
     "tesseract.js": "7.0.0"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "0.8.13"
   }
 }
