@@ -1,5 +1,5 @@
-import { scanTextValue } from "../detectors.js";
 import { replacementFor } from "../replacements.js";
+import { scanValueCollectionWithIdentitySeeds } from "../scan-helpers.js";
 import { annotateFindings, descendingReplacementOrder, detectLineEnding, summarise, withTrailingNewline } from "../utils.js";
 
 function splitYamlComment(value) {
@@ -103,10 +103,11 @@ export function prepareYamlDocument(text, name) {
 }
 
 export function scanYamlDocument(document, options = {}) {
-  const findings = [];
-  for (const segment of document.segments) {
-    findings.push(...scanTextValue(segment.value, options, { kind: "yaml", segmentIndex: segment.segmentIndex, keyHint: segment.keyHint, previewPath: segment.previewPath }));
-  }
+  const segments = document.segments.map((segment) => ({
+    value: segment.value,
+    context: { kind: "yaml", segmentIndex: segment.segmentIndex, keyHint: segment.keyHint, previewPath: segment.previewPath },
+  }));
+  const findings = scanValueCollectionWithIdentitySeeds(segments, options);
   const annotated = annotateFindings(findings);
   return { document, findings: annotated, summary: summarise(annotated), preview: document.text, formatInfo: document.formatInfo };
 }

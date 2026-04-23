@@ -1,5 +1,5 @@
-import { scanTextValue } from "../detectors.js";
 import { replacementFor } from "../replacements.js";
+import { scanValueCollectionWithIdentitySeeds } from "../scan-helpers.js";
 import { annotateFindings, descendingReplacementOrder, detectLineEnding, summarise } from "../utils.js";
 
 function parseJsonString(text, startIndex) {
@@ -144,11 +144,14 @@ export function prepareJsonDocument(text, name) {
 }
 
 export function scanJsonDocument(document, options = {}) {
-  const findings = [];
-  for (const location of document.locations) {
+  const locations = document.locations.map((location) => {
     const keyHint = location.path[location.path.length - 1] || "";
-    findings.push(...scanTextValue(location.value, options, { kind: "json", path: location.path, keyHint, previewPath: location.path.join(".") }));
-  }
+    return {
+      value: location.value,
+      context: { kind: "json", path: location.path, keyHint, previewPath: location.path.join(".") },
+    };
+  });
+  const findings = scanValueCollectionWithIdentitySeeds(locations, options);
   const annotated = annotateFindings(findings);
   return { document, findings: annotated, summary: summarise(annotated), preview: document.source, formatInfo: document.formatInfo };
 }

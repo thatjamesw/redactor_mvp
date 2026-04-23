@@ -25,6 +25,10 @@
             <button id="scan-button" class="secondary">Scan only</button>
             <button id="apply-button" class="ghost">Refresh output</button>
           </div>
+          <div class="hero-notes" aria-label="Local-only details">
+            <span>Runs fully in your browser</span>
+            <span>GitHub Pages hosts static files only</span>
+          </div>
         </div>
       </div>
     </header>
@@ -128,11 +132,8 @@
         <div class="step-layout input-layout">
           <div class="stack">
             <label class="label" for="file-input">Upload file</label>
-            <div class="upload-control">
-              <label for="file-input" class="upload-trigger">Choose file</label>
-              <div class="upload-meta">Text, CSV, JSON, YAML, XLSX, PDF, DOCX, or image</div>
-              <input id="file-input" class="file-input-native" type="file" accept="image/*,.txt,.csv,.tsv,.json,.yaml,.yml,.xlsx,.pdf,.docx,text/plain,text/csv,application/json,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-            </div>
+            <input id="file-input" type="file" accept="image/*,.txt,.csv,.tsv,.json,.yaml,.yml,.xlsx,.pdf,.docx,text/plain,text/csv,application/json,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <div class="upload-meta">Text, CSV, JSON, YAML, XLSX, PDF, DOCX, or image</div>
           </div>
           <div class="stack content-stack">
             <label class="label" for="text-input">Content</label>

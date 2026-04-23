@@ -1,5 +1,5 @@
 import { applyTextReplacements } from "../replacements.js";
-import { annotateFindings, detectLineEnding, summarise } from "../utils.js";
+import { annotateFindings, ascendingFindingOrder, dedupeFindings, detectLineEnding, extractIdentitySeeds, summarise } from "../utils.js";
 import { scanTextValue } from "../detectors.js";
 
 const markdownModule = typeof document === "undefined"
@@ -89,6 +89,10 @@ function collapseDuplicateRanges(findings) {
   return [...bestByRange.values()];
 }
 
+function finalizeTextFindings(findings) {
+  return collapseNestedFindings(dedupeFindings(collapseDuplicateRanges(findings))).sort(ascendingFindingOrder);
+}
+
 function visitNodes(node, onNode) {
   if (!node || typeof node !== "object") return;
   onNode(node);
@@ -98,6 +102,7 @@ function visitNodes(node, onNode) {
 
 function markdownTableFindings(source, options, kind) {
   const findings = [];
+  const cells = [];
   const tree = fromMarkdown(source, {
     extensions: [gfmTable()],
     mdastExtensions: [gfmTableFromMarkdown()],
@@ -131,9 +136,31 @@ function markdownTableFindings(source, options, kind) {
             original: cellData.original.slice(finding.start, finding.end) || finding.original,
           });
         }
+        cells.push({ cellData, header, rowIndex, columnIndex });
       });
     });
   });
+
+  const identitySeeds = extractIdentitySeeds(findings);
+  if (identitySeeds.length) {
+    cells.forEach(({ cellData, header, rowIndex, columnIndex }) => {
+      const cellFindings = collapseNestedFindings(scanTextValue(cellData.text, { ...options, identitySeeds }, {
+        kind,
+        keyHint: header,
+        previewPath: `row ${rowIndex + 1}.${header}`,
+        rowIndex,
+        columnIndex,
+      }));
+      for (const finding of cellFindings) {
+        findings.push({
+          ...finding,
+          start: cellData.start + finding.start,
+          end: cellData.start + finding.end,
+          original: cellData.original.slice(finding.start, finding.end) || finding.original,
+        });
+      }
+    });
+  }
 
   return findings;
 }
@@ -208,11 +235,11 @@ export function prepareTextDocument(text, name = "pasted.txt") {
 }
 
 export function scanTextDocument(document, options = {}) {
-  const findings = collapseNestedFindings(collapseDuplicateRanges([
+  const findings = finalizeTextFindings([
     ...scanTextValue(document.content, options, { kind: document.kind }),
     ...headerlessPipeRowFindings(document.content, options, document.kind),
     ...markdownTableFindings(document.content, options, document.kind),
-  ])).sort((left, right) => left.start - right.start || right.end - left.end || left.label.localeCompare(right.label));
+  ]);
   const deduped = findings.filter((item, index) => {
     const previous = findings[index - 1];
     return !previous || previous.start !== item.start || previous.end !== item.end || previous.label !== item.label;

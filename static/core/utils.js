@@ -46,3 +46,105 @@ export function annotateFindings(findings) {
 export function descendingReplacementOrder(left, right) {
   return right.start - left.start || right.end - left.end;
 }
+
+export function ascendingFindingOrder(left, right) {
+  return left.start - right.start || right.end - left.end || left.label.localeCompare(right.label);
+}
+
+const IDENTITY_LEET_MAP = {
+  "0": "o",
+  "1": "i",
+  "3": "e",
+  "4": "a",
+  "5": "s",
+  "6": "g",
+  "7": "t",
+  "8": "b",
+  "@": "a",
+  "$": "s",
+};
+
+export function normalizeIdentityText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[01345678@$]/g, (char) => IDENTITY_LEET_MAP[char] || char)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function identityTokens(value) {
+  const normalized = normalizeIdentityText(value);
+  return normalized ? normalized.split(" ") : [];
+}
+
+export function editDistanceWithin(left, right, limit = 1) {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  if (Math.abs(left.length - right.length) > limit) return false;
+
+  const rows = left.length + 1;
+  const cols = right.length + 1;
+  const matrix = Array.from({ length: rows }, (_, rowIndex) =>
+    Array.from({ length: cols }, (_, colIndex) => (rowIndex === 0 ? colIndex : (colIndex === 0 ? rowIndex : 0)))
+  );
+
+  for (let row = 1; row < rows; row += 1) {
+    let rowMin = Number.POSITIVE_INFINITY;
+    for (let col = 1; col < cols; col += 1) {
+      const cost = left[row - 1] === right[col - 1] ? 0 : 1;
+      matrix[row][col] = Math.min(
+        matrix[row - 1][col] + 1,
+        matrix[row][col - 1] + 1,
+        matrix[row - 1][col - 1] + cost
+      );
+      rowMin = Math.min(rowMin, matrix[row][col]);
+    }
+    if (rowMin > limit) return false;
+  }
+
+  return matrix[rows - 1][cols - 1] <= limit;
+}
+
+export function extractIdentitySeeds(findings, minimumConfidence = 0.72) {
+  return findings
+    .filter((item) => ["PERSON", "PLACE", "ORG"].includes(item.label) && item.confidence >= minimumConfidence)
+    .map((item) => ({
+      label: item.label,
+      original: item.original,
+      tokens: identityTokens(item.original),
+    }))
+    .filter((seed) => seed.tokens.length > 0)
+    .filter((seed, index, list) => (
+      list.findIndex((other) => other.label === seed.label && other.tokens.join(" ") === seed.tokens.join(" ")) === index
+    ));
+}
+
+export function dedupeFindings(findings) {
+  const seen = new Set();
+  return findings.filter((finding) => {
+    const contextKey = JSON.stringify({
+      previewPath: finding.context?.previewPath,
+      rowIndex: finding.context?.rowIndex,
+      columnIndex: finding.context?.columnIndex,
+      sheetIndex: finding.context?.sheetIndex,
+      segmentIndex: finding.context?.segmentIndex,
+      path: finding.context?.path,
+      pageNumber: finding.context?.pageNumber,
+      kind: finding.context?.kind,
+    });
+    const key = [
+      finding.label,
+      finding.start,
+      finding.end,
+      finding.original,
+      Math.round((finding.confidence || 0) * 1000),
+      contextKey,
+    ].join("::");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}

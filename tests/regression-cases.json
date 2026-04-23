@@ -61,6 +61,56 @@
     "minFindings": 1
   },
   {
+    "name": "plain text contact line redacts lowercase name and place fields",
+    "fileName": "contacts.txt",
+    "threshold": "medium",
+    "input": "james wright, j4m3sy@me.com, helsinki, finland\n",
+    "expectPresent": [
+      "[REDACTED], [REDACTED], [REDACTED], [REDACTED]"
+    ],
+    "expectAbsent": [
+      "james wright",
+      "j4m3sy@me.com",
+      "helsinki",
+      "finland"
+    ],
+    "minFindings": 4
+  },
+  {
+    "name": "identity seed propagation catches mixed-case and leetspeak variants",
+    "fileName": "notes.txt",
+    "threshold": "medium",
+    "input": "Name: James Wright\nAlt spellings: j4m3s wright, jAmEs Wright, jame5 wright\n",
+    "expectAbsent": [
+      "James Wright",
+      "j4m3s wright",
+      "jAmEs Wright",
+      "jame5 wright"
+    ],
+    "expectPresent": [
+      "Name: [REDACTED]",
+      "Alt spellings: [REDACTED], [REDACTED], [REDACTED]"
+    ],
+    "minFindings": 4
+  },
+  {
+    "name": "markdown table propagates identity seeds across case and leetspeak variants",
+    "fileName": "contacts.md",
+    "threshold": "medium",
+    "input": "| Name | Notes |\n| -- | -- |\n| James Wright | primary |\n| j4m3s wright | alias |\n| jAmEs Wright | alias |\n| jame5 wright | alias |\n",
+    "expectAbsent": [
+      "James Wright",
+      "j4m3s wright",
+      "jAmEs Wright",
+      "jame5 wright"
+    ],
+    "expectPresent": [
+      "| [REDACTED] | primary |",
+      "| [REDACTED] | alias |"
+    ],
+    "minFindings": 4
+  },
+  {
     "name": "markdown table uses headers to redact names and emails",
     "fileName": "runbook.md",
     "input": "| Type | Name | Role | Email | Phone | Notes |\n| -- | -- | -- | -- | -- | -- |\n| Customer primary | Jarmo Kareisto | CTO | jarmo.kareisto@proliitto.fi | +358407327122 | - |\n| Customer secondary | Esa Heikkinen | IT | esa.heikkinen@proliitto.fi | +358407327122 | - |\n",
@@ -75,6 +125,22 @@
       "| Customer secondary | [REDACTED] | IT | [REDACTED] | [REDACTED] | - |"
     ],
     "minFindings": 6
+  },
+  {
+    "name": "markdown table honors Finnish headers for names places and email",
+    "fileName": "asiakkaat.md",
+    "threshold": "medium",
+    "input": "| Nimi | Sähköposti | Kaupunki | Maa |\n| -- | -- | -- | -- |\n| James Wright | j4m3sy@me.com | Helsinki | Finland |\n",
+    "expectAbsent": [
+      "James Wright",
+      "j4m3sy@me.com",
+      "Helsinki",
+      "Finland"
+    ],
+    "expectPresent": [
+      "| [REDACTED] | [REDACTED] | [REDACTED] | [REDACTED] |"
+    ],
+    "minFindings": 4
   },
   {
     "name": "headerless pipe rows infer names from nearby email and phone",

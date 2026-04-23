@@ -6,6 +6,7 @@ Browser-based redaction tool for cleaning sensitive data before sharing it with 
 
 - Scans pasted text or uploaded text-based files locally in the browser
 - Flags likely PII and secrets such as emails, phone numbers, SSNs, tax IDs, passport-like IDs, driver's-license-like IDs, IPs, MAC addresses, VINs, street addresses, UUIDs, API keys, JWTs, and credit card numbers
+- Uses identity-aware scanning for names, places, and organisations, including case-insensitive and light leetspeak variants once a confident seed has been found
 - Lets you review findings before applying them
 - Supports both `redact` and `pseudonymise` output modes
 - Includes a one-click `LLM-safe copy` workflow
@@ -52,10 +53,29 @@ The static build currently supports:
 - `.json`
 - `.yaml`
 - `.yml`
+- `.md` and pasted markdown
 - `.xlsx`
 - `.pdf`
 - `.docx`
 - `.png`, `.jpg`, `.jpeg`, `.webp`, and other browser-readable images via local OCR
+
+## Detection Approach
+
+The scanner is split into recognizer-style layers so we can improve coverage without turning the codebase into one large regex file:
+
+- `structured` detectors handle high-shape values such as emails, IPs, cards, UUIDs, secrets, IDs, and addresses
+- `identity` detectors handle people, places, and organisations using contextual cues, semantic field hints, and seeded propagation
+- `shared` helpers centralize confidence boosts, category handling, and match bookkeeping
+- format scanners for text, markdown, CSV, TSV, JSON, YAML, XLSX, PDF, DOCX, and images provide document-specific context without owning the detection rules themselves
+
+Some important behavior:
+
+- Markdown headers are treated as semantic hints only when they describe sensitive fields such as name, email, city, or country
+- Headers themselves are not redacted unless they are actual findings
+- Identity propagation is seeded from higher-confidence findings first, then reused to catch nearby variants like `James`, `jAmEs`, or `j4m3s`
+- Weak structured patterns are boosted by context instead of automatically trusted
+
+This keeps the browser build explainable and testable while avoiding overly broad fuzzy matching.
 
 ## Format Guarantees
 
@@ -128,6 +148,8 @@ This covers the structured-redaction and overlap bugs we already hit, including:
 - full international email redaction
 - no partial leftovers like `[REDACTED].cn`
 - JSON/YAML/CSV shape-preserving redaction paths
+- markdown tables and header-driven semantic hints
+- identity seed propagation across case and leetspeak variants
 - `.xlsx` and `.pdf` regression coverage
 
 ## CI Guardrails
@@ -140,6 +162,12 @@ GitHub Actions now runs a lightweight CI workflow on pushes to `main` and on pul
 - `npm run test:regress`
 
 That gives the repo an automated check for dependency health and the regressions we have already fixed.
+
+Current audit status:
+
+- `npm audit --audit-level=high` is clean
+- a moderate advisory remains through `exceljs -> uuid`
+- the npm-proposed fix downgrades `exceljs` to a breaking version, so it should be handled deliberately rather than with `npm audit fix --force`
 
 ## GitHub Pages
 
@@ -156,7 +184,7 @@ It now regenerates all local browser bundles, including OCR, XLSX, and PDF parsi
 Because this is now a static app, the easiest way to test it locally is with a simple static server:
 
 ```bash
-cd redactor_mvp
+cd /Users/jameswright/dev/_mvp/GHP-Data-Redactor
 python3 -m http.server 4173
 ```
 

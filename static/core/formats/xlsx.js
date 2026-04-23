@@ -1,5 +1,5 @@
-import { scanTextValue } from "../detectors.js";
 import { replacementFor } from "../replacements.js";
+import { scanValueCollectionWithIdentitySeeds } from "../scan-helpers.js";
 import { annotateFindings, descendingReplacementOrder, summarise } from "../utils.js";
 
 const EXCELJS_SCRIPT_PATH = "./static/vendor/exceljs/exceljs.min.js";
@@ -106,22 +106,26 @@ export async function prepareXlsxDocument(fileState) {
 }
 
 export function scanXlsxDocument(document, options = {}) {
-  const findings = [];
+  const cells = [];
   document.sheets.forEach((sheet, sheetIndex) => {
     sheet.rows.forEach((row, rowIndex) => {
       row.forEach((cell, columnIndex) => {
         const header = sheet.headers[columnIndex] || `column_${columnIndex + 1}`;
-        findings.push(...scanTextValue(cell, options, {
-          kind: "xlsx",
-          sheetIndex,
-          rowIndex,
-          columnIndex,
-          keyHint: header,
-          previewPath: `${sheet.name}!row ${rowIndex + 1}.${header}`,
-        }));
+        cells.push({
+          value: cell,
+          context: {
+            kind: "xlsx",
+            sheetIndex,
+            rowIndex,
+            columnIndex,
+            keyHint: header,
+            previewPath: `${sheet.name}!row ${rowIndex + 1}.${header}`,
+          },
+        });
       });
     });
   });
+  const findings = scanValueCollectionWithIdentitySeeds(cells, options);
   const annotated = annotateFindings(findings);
   const previewLines = document.sheets.slice(0, 2).flatMap((sheet) => {
     const rows = [sheet.headers, ...sheet.rows].slice(0, 6);

@@ -1,5 +1,5 @@
-import { scanTextValue } from "../detectors.js";
 import { replacementFor } from "../replacements.js";
+import { scanValueCollectionWithIdentitySeeds } from "../scan-helpers.js";
 import { annotateFindings, descendingReplacementOrder, detectLineEnding, summarise, withTrailingNewline } from "../utils.js";
 
 function escapeCsvCell(value, separator) {
@@ -71,13 +71,15 @@ export function prepareDelimitedDocument(text, separator, name) {
 }
 
 export function scanDelimitedDocument(document, options = {}) {
-  const findings = [];
+  const cells = [];
   document.rows.forEach((row, rowIndex) => {
     row.forEach((cell, columnIndex) => {
       const header = document.headers[columnIndex] || `column_${columnIndex + 1}`;
-      findings.push(...scanTextValue(cell, options, { kind: "table", rowIndex, columnIndex, keyHint: header, previewPath: `row ${rowIndex + 1}.${header}` }));
+      const context = { kind: "table", rowIndex, columnIndex, keyHint: header, previewPath: `row ${rowIndex + 1}.${header}` };
+      cells.push({ value: cell, context });
     });
   });
+  const findings = scanValueCollectionWithIdentitySeeds(cells, options);
   const annotated = annotateFindings(findings);
   return {
     document,
