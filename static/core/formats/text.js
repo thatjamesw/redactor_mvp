@@ -1,5 +1,6 @@
 import { applyTextReplacements } from "../replacements.js";
-import { annotateFindings, ascendingFindingOrder, dedupeFindings, detectLineEnding, extractIdentitySeeds, summarise } from "../utils.js";
+import { scanValueCollectionWithIdentitySeeds } from "../scan-helpers.js";
+import { annotateFindings, ascendingFindingOrder, dedupeFindings, detectLineEnding, summarise } from "../utils.js";
 import { scanTextValue } from "../detectors.js";
 
 const markdownModule = typeof document === "undefined"
@@ -107,58 +108,67 @@ function markdownTableFindings(source, options, kind) {
     extensions: [gfmTable()],
     mdastExtensions: [gfmTableFromMarkdown()],
   });
+  let tableIndex = 0;
 
   visitNodes(tree, (node) => {
     if (node.type !== "table") return;
+    const currentTableIndex = tableIndex;
+    tableIndex += 1;
     const [headerRow, ...dataRows] = node.children || [];
     if (!headerRow?.children?.length || !dataRows.length) return;
 
     const headers = headerRow.children.map((cell, columnIndex) => cellValueWithOffsets(source, cell)?.text || `column_${columnIndex + 1}`);
     dataRows.forEach((row, rowIndex) => {
+      const rowCells = (row.children || []).map((cell) => cellValueWithOffsets(source, cell));
+      const emailIndex = rowCells.findIndex((cell) => cell && /^[A-Za-z0-9._%+\-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,63}$/.test(cell.text));
+      const phoneIndex = rowCells.findIndex((cell) => {
+        if (!cell || !/^[+\d(][\d\s().-]{6,}$/.test(cell.text)) return false;
+        const digits = cell.text.replace(/\D/g, "");
+        return cell.text.trim().startsWith("+") || digits.length >= 10;
+      });
+      const contactAnchorIndex = emailIndex !== -1 ? emailIndex : phoneIndex;
+
       row.children?.forEach((cell, columnIndex) => {
         const cellData = cellValueWithOffsets(source, cell);
         if (!cellData) return;
 
         const header = headers[columnIndex] || `column_${columnIndex + 1}`;
-        const cellFindings = collapseNestedFindings(scanTextValue(cellData.text, options, {
-          kind,
-          keyHint: header,
-          previewPath: `row ${rowIndex + 1}.${header}`,
+        const profileHints = [];
+        if (contactAnchorIndex !== -1 && columnIndex === contactAnchorIndex - 1 && /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+){1,3}$/u.test(cellData.text)) {
+          profileHints.push("PERSON");
+        }
+        if (contactAnchorIndex !== -1 && columnIndex > contactAnchorIndex && /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+){0,2}$/u.test(cellData.text)) {
+          profileHints.push("PLACE");
+        }
+        cells.push({
+          cellData,
+          header,
           rowIndex,
           columnIndex,
-        }));
-
-        for (const finding of cellFindings) {
-          findings.push({
-            ...finding,
-            start: cellData.start + finding.start,
-            end: cellData.start + finding.end,
-            original: cellData.original.slice(finding.start, finding.end) || finding.original,
-          });
-        }
-        cells.push({ cellData, header, rowIndex, columnIndex });
+          tableIndex: currentTableIndex,
+          value: cellData.text,
+          context: {
+            kind,
+            keyHint: header,
+            previewPath: `row ${rowIndex + 1}.${header}`,
+            rowIndex,
+            columnIndex,
+            tableIndex: currentTableIndex,
+            profileHints,
+          },
+        });
       });
     });
   });
 
-  const identitySeeds = extractIdentitySeeds(findings);
-  if (identitySeeds.length) {
-    cells.forEach(({ cellData, header, rowIndex, columnIndex }) => {
-      const cellFindings = collapseNestedFindings(scanTextValue(cellData.text, { ...options, identitySeeds }, {
-        kind,
-        keyHint: header,
-        previewPath: `row ${rowIndex + 1}.${header}`,
-        rowIndex,
-        columnIndex,
-      }));
-      for (const finding of cellFindings) {
-        findings.push({
-          ...finding,
-          start: cellData.start + finding.start,
-          end: cellData.start + finding.end,
-          original: cellData.original.slice(finding.start, finding.end) || finding.original,
-        });
-      }
+  for (const finding of scanValueCollectionWithIdentitySeeds(cells, options)) {
+    const cell = cells.find((entry) => entry.tableIndex === finding.context?.tableIndex && entry.rowIndex === finding.context?.rowIndex && entry.columnIndex === finding.context?.columnIndex);
+    if (!cell) continue;
+    findings.push({
+      ...finding,
+      start: cell.cellData.start + finding.start,
+      end: cell.cellData.start + finding.end,
+      original: cell.cellData.original.slice(finding.start, finding.end) || finding.original,
     });
   }
 
@@ -198,7 +208,7 @@ function headerlessPipeRowFindings(source, options, kind) {
     if (!hasEmail && !hasPhone) continue;
 
     for (const cell of cellMeta) {
-      if (!/^[A-ZÅÄÖ][A-Za-zÅÄÖåäö.'-]+(?:\s+[A-ZÅÄÖ][A-Za-zÅÄÖåäö.'-]+){1,3}$/.test(cell.text)) continue;
+      if (!/^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+){1,3}$/u.test(cell.text)) continue;
       if (/^(?:CTO|IT|CEO|CFO|COO|Project Manager|Manager|Owner|Service Owner|Customer primary|Customer secondary)$/i.test(cell.text)) continue;
       findings.push({
         id: `f-h-${findings.length + 1}`,

@@ -1,16 +1,14 @@
 import { editDistanceWithin, extractIdentitySeeds, identityTokens } from "../utils.js";
-import { addFinding, categoryEnabled, contextHasSemanticHint } from "./shared.js";
+import { semanticEvidence } from "./evidence.js";
+import { addFinding, categoryEnabled } from "./shared.js";
 
-const NAME_CONTEXT_PATTERN = /\b(?:name|customer|client|employee|user|contact|owner|recipient|nimi|henkilo|henkilö|yhteyshenkilo|yhteyshenkilö|forfattare|författare)\s*[:=-]\s*([A-ZÅÄÖ][A-Za-zÅÄÖåäö.'-]+(?:[ \t]+[A-ZÅÄÖ][A-Za-zÅÄÖåäö.'-]+){1,3})/gi;
-const NAME_HINTS = ["name", "full name", "first name", "last name", "contact", "author", "nimi", "etunimi", "sukunimi", "yhteyshenkilo", "yhteyshenkilö", "forfattare", "författare"];
-const PLACE_HINTS = ["city", "town", "location", "country", "region", "address", "osoite", "kaupunki", "paikkakunta", "maa", "land", "stad"];
-const ORG_HINTS = ["company", "organisation", "organization", "employer", "business", "tenant", "yritys", "organisaatio", "bolag"];
+const LABELLED_VALUE_PATTERN = /\b[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}0-9 _./'-]{1,40}\s*[:=-]\s*([\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+(?:[ \t]+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+){1,3})/giu;
 
-const CONTACT_SEGMENT_NAME = /^[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}(?:\s+[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}){1,2}$/;
-const CONTACT_SEGMENT_PLACE = /^[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}(?:\s+[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}){0,2}$/;
+const CONTACT_SEGMENT_NAME = /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]{1,}(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]{1,}){1,2}$/u;
+const CONTACT_SEGMENT_PLACE = /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]{1,}(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]{1,}){0,2}$/u;
 const EMAIL_LOOSE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,63}\b/g;
-const IDENTITY_CANDIDATE = /\b[A-Za-zÅÄÖåäö0-9@$][A-Za-zÅÄÖåäö0-9@$.'-]{1,}(?:\s+[A-Za-zÅÄÖåäö0-9@$][A-Za-zÅÄÖåäö0-9@$.'-]{1,}){0,2}\b/g;
-const STANDALONE_NAME_LINE = /^[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}(?:\s+[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö.'-]{1,}){1,2}$/;
+const IDENTITY_CANDIDATE = /\b[\p{Script=Latin}\p{M}0-9@$][\p{Script=Latin}\p{M}0-9@$.'\u2019-]{1,}(?:\s+[\p{Script=Latin}\p{M}0-9@$][\p{Script=Latin}\p{M}0-9@$.'\u2019-]{1,}){0,2}\b/gu;
+const STANDALONE_NAME_LINE = /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]{1,}(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]{1,}){1,2}$/u;
 const NON_NAME_LINE_HINTS = /^(?:project manager|manager|owner|service owner|customer primary|customer secondary|incident response|runbook|rollback|support team|security team|engineering team)$/i;
 const NON_NAME_TOKENS = new Set([
   "and", "or", "the", "for", "with", "from", "into", "onto", "over", "under",
@@ -23,12 +21,14 @@ afghanistan,albania,algeria,andorra,angola,argentina,armenia,australia,austria,a
 `.trim().split(","));
 
 function addContextualNameFindings(content, findings, context) {
-  NAME_CONTEXT_PATTERN.lastIndex = 0;
+  LABELLED_VALUE_PATTERN.lastIndex = 0;
   let nameMatch;
-  while ((nameMatch = NAME_CONTEXT_PATTERN.exec(content)) !== null) {
+  while ((nameMatch = LABELLED_VALUE_PATTERN.exec(content)) !== null) {
     const original = nameMatch[1];
+    const labelHint = nameMatch[0].slice(0, nameMatch[0].indexOf(original)).replace(/[:=-]\s*$/, "").trim();
+    if (!semanticEvidence({ ...context, keyHint: labelHint }, "PERSON").matched) continue;
     const start = nameMatch.index + nameMatch[0].indexOf(original);
-    addFinding(findings, "PERSON", 0.79, start, start + original.length, original, ["contextual_name_pattern"], context);
+    addFinding(findings, "PERSON", 0.73, start, start + original.length, original, ["labelled_identity_pattern"], context);
   }
 }
 
@@ -36,16 +36,16 @@ function addFieldHintIdentityFindings(content, options, findings, context) {
   if (!options.detectNames || !context.keyHint) return;
   const trimmed = content.trim();
   if (!trimmed) return;
-  const nameContext = contextHasSemanticHint(context, NAME_HINTS);
-  const placeContext = contextHasSemanticHint(context, PLACE_HINTS);
-  const orgContext = contextHasSemanticHint(context, ORG_HINTS);
+  const nameEvidence = semanticEvidence(context, "PERSON");
+  const placeEvidence = semanticEvidence(context, "PLACE");
+  const orgEvidence = semanticEvidence(context, "ORG");
 
-  if (categoryEnabled(options, "PERSON") && nameContext && /^[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö ,.'-]{1,60}$/.test(trimmed)) {
-    addFinding(findings, "PERSON", 0.84, 0, content.length, content, ["field_hint:name"], context);
-  } else if (categoryEnabled(options, "PLACE") && placeContext && /^[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö ,.'-]{1,60}$/.test(trimmed)) {
-    addFinding(findings, "PLACE", 0.75, 0, content.length, content, ["field_hint:place"], context);
-  } else if (categoryEnabled(options, "ORG") && orgContext && /^[A-Za-zÅÄÖåäö0-9][A-Za-zÅÄÖåäö0-9 &.,'-]{2,80}$/.test(trimmed)) {
-    addFinding(findings, "ORG", 0.72, 0, content.length, content, ["field_hint:org"], context);
+  if (categoryEnabled(options, "PERSON") && nameEvidence.matched && /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M} ,.'\u2019-]{1,60}$/u.test(trimmed)) {
+    addFinding(findings, "PERSON", Math.min(0.9, 0.72 + nameEvidence.score), 0, content.length, content, ["field_hint:name"], context);
+  } else if (categoryEnabled(options, "PLACE") && placeEvidence.matched && /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M} ,.'\u2019-]{1,60}$/u.test(trimmed)) {
+    addFinding(findings, "PLACE", Math.min(0.84, 0.66 + placeEvidence.score), 0, content.length, content, ["field_hint:place"], context);
+  } else if (categoryEnabled(options, "ORG") && orgEvidence.matched && /^[\p{Script=Latin}\p{M}0-9][\p{Script=Latin}\p{M}0-9 &.,'\u2019-]{2,80}$/u.test(trimmed)) {
+    addFinding(findings, "ORG", Math.min(0.84, 0.64 + orgEvidence.score), 0, content.length, content, ["field_hint:org"], context);
   }
 }
 

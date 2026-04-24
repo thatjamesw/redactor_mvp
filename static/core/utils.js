@@ -129,6 +129,7 @@ export function dedupeFindings(findings) {
       previewPath: finding.context?.previewPath,
       rowIndex: finding.context?.rowIndex,
       columnIndex: finding.context?.columnIndex,
+      tableIndex: finding.context?.tableIndex,
       sheetIndex: finding.context?.sheetIndex,
       segmentIndex: finding.context?.segmentIndex,
       path: finding.context?.path,

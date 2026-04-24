@@ -1,4 +1,5 @@
-import { addFinding, boostConfidence, categoryEnabled, contextContains, contextHasSemanticHint, luhnOk, scanMatches } from "./shared.js";
+import { addressCandidates, addressConfidence, confidenceWithEvidence, isLikelyStreetAddress, semanticEvidence } from "./evidence.js";
+import { addFinding, boostConfidence, categoryEnabled, contextContains, luhnOk, scanMatches } from "./shared.js";
 
 const EMAIL_STRICT = /\b[A-Za-z0-9._%+\-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,63}\b/g;
 const EMAIL_LOOSE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,63}\b/g;
@@ -11,6 +12,9 @@ const AWS_AKID = /\bAKIA[0-9A-Z]{16}\b/g;
 const JWT = /\beyJ[0-9A-Za-z_\-]+\.[0-9A-Za-z_\-]+\.[0-9A-Za-z_\-]+\b/g;
 const GENERIC_SECRET = /\b[A-Za-z0-9_\-]{24,}\b/g;
 const CREDIT_CARD = /\b(?:\d[ -]*?){13,19}\b/g;
+const IBAN = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}\b/gi;
+const BIC = /\b[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b/g;
+const VAT_ID = /\b(?:ATU\d{8}|BE0?\d{9}|DE\d{9}|DK\d{8}|ES[A-Z0-9]\d{7}[A-Z0-9]|FI\d{8}|FR[A-Z0-9]{2}\d{9}|GB(?:\d{9}|\d{12}|GD\d{3}|HA\d{3})|IE\d[A-Z0-9]\d{5}[A-Z]|IT\d{11}|NL\d{9}B\d{2}|NO\d{9}MVA|PL\d{10}|PT\d{9}|SE\d{12})\b/gi;
 const SSN = /\b\d{3}-\d{2}-\d{4}\b/g;
 const US_TIN = /\b9\d{2}-?(?:7\d|8[0-8]|9[0-2])-\d{4}\b/g;
 const MAC_ADDRESS = /\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b/g;
@@ -20,38 +24,39 @@ const MRZ_PASSPORT_NUMBER = /\b[A-Z][0-9]{6,8}\b/g;
 const MRZ_LINE = /\bP<[A-Z<]{10,}|\b[A-Z0-9<]{20,}\b/g;
 const DRIVERS_LICENSE_GENERIC = /\b[A-Z]{1,2}\d{6,8}\b/g;
 const PHONE = /\b(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)\d{3,4}[\s.-]?\d{3,4}\b/g;
-const ADDRESS_SUFFIX =
-  "(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Place|Pl|Parkway|Pkwy|Katu|Tie|Polku|Kuja|Vagen|V\\.|Gata|Strasse|Straße|Rue|Chemin|Via|Corso|Calle|Camino|Rua|Avenida|Avda)";
-const STREET_ADDRESS_NUMBER_FIRST = new RegExp(`\\b\\d{1,6}[A-Za-z]?(?:[-/]\\d+)?\\s+[A-Za-z0-9.'\\- ]+\\s${ADDRESS_SUFFIX}(?:\\s+\\d+[A-Za-z]?)?(?:\\s+[A-Za-z]\\s+\\d+)?\\b`, "gi");
-const STREET_ADDRESS_NAME_FIRST_WITH_NUMBER = new RegExp(`\\b[A-Za-zÅÄÖåäö0-9.'\\-]+(?:\\s+[A-Za-zÅÄÖåäö0-9.'\\-]+)*\\s${ADDRESS_SUFFIX}\\s+\\d{1,6}[A-Za-z]?(?:\\s+[A-Za-z]\\s+\\d+)?(?:\\s+\\d+[A-Za-z]?)?\\b`, "gi");
-const ADDRESS_CONTEXT_PATTERN = new RegExp(`\\b(?:address|street|osoite|addr)\\s*[:=-]\\s*((?:\\d{1,6}[A-Za-z]?(?:[-/]\\d+)?\\s+[A-Za-z0-9.'\\- ]+\\s${ADDRESS_SUFFIX}|[A-Za-zÅÄÖåäö0-9.'\\-]+(?:\\s+[A-Za-zÅÄÖåäö0-9.'\\-]+)*\\s${ADDRESS_SUFFIX}\\s+\\d{1,6}[A-Za-z]?(?:\\s+[A-Za-z]\\s+\\d+)?(?:\\s+\\d+[A-Za-z]?)?))\\b`, "gi");
-
-const EMAIL_HINTS = ["email", "email address", "e-mail", "mail", "sahkoposti", "sähköposti", "epost", "e-post"];
-const TAX_ID_HINTS = ["ssn", "social security", "tax id", "tin", "itin", "ein", "hetu", "henkilotunnus", "henkilötunnus", "y-tunnus", "ytunnus"];
-const PASSPORT_HINTS = ["passport", "passport number", "passi", "passnummer"];
-const LICENSE_HINTS = ["driver", "drivers license", "driver license", "license number", "licence number", "ajokortti", "korkort", "körkort"];
-const VIN_HINTS = ["vin", "vehicle identification", "vehicle id", "ajoneuvo", "vehicle"];
-const MAC_HINTS = ["mac", "mac address"];
-const PHONE_HINTS = ["phone", "telephone", "mobile", "cell", "fax", "contact number", "puhelin", "puhelinnumero", "matkapuhelin", "telefon", "mobil"];
-const ADDRESS_HINTS = ["city", "town", "location", "country", "region", "address", "osoite", "kaupunki", "paikkakunta", "maa", "land", "stad"];
-const SECRET_HINTS = ["secret", "token", "key", "credential", "password", "salaisuus"];
-
 const PASSPORT_DISALLOWED = /^(?:true|false|null)$/i;
 const VIN_DISALLOWED = /[IOQ]/;
 
+function ibanChecksumOk(value) {
+  const compact = String(value || "").replace(/\s/g, "").toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(compact)) return false;
+  const rearranged = `${compact.slice(4)}${compact.slice(0, 4)}`;
+  let remainder = 0;
+  for (const char of rearranged) {
+    const expanded = /[A-Z]/.test(char) ? String(char.charCodeAt(0) - 55) : char;
+    for (const digit of expanded) {
+      remainder = (remainder * 10 + Number(digit)) % 97;
+    }
+  }
+  return remainder === 1;
+}
+
+function overlapsFinding(findings, start, end, labels) {
+  return findings.some((finding) => labels.includes(finding.label) && start >= finding.start && end <= finding.end);
+}
+
 export function scanStructuredFindings(content, options = {}, context = {}, findings = []) {
-  const emailContext = contextHasSemanticHint(context, EMAIL_HINTS);
-  const phoneContext = contextHasSemanticHint(context, PHONE_HINTS);
-  const taxIdContext = contextHasSemanticHint(context, TAX_ID_HINTS);
-  const passportContext = contextHasSemanticHint(context, PASSPORT_HINTS);
-  const licenseContext = contextHasSemanticHint(context, LICENSE_HINTS);
-  const vinContext = contextHasSemanticHint(context, VIN_HINTS);
-  const macContext = contextHasSemanticHint(context, MAC_HINTS);
-  const addressContext = contextHasSemanticHint(context, ADDRESS_HINTS);
+  const emailContext = semanticEvidence(context, "EMAIL").matched;
+  const phoneContext = semanticEvidence(context, "PHONE").matched;
+  const taxIdContext = semanticEvidence(context, "US_TAX_ID").matched;
+  const passportContext = semanticEvidence(context, "PASSPORT").matched;
+  const licenseContext = semanticEvidence(context, "DRIVERS_LICENSE").matched;
+  const vinContext = semanticEvidence(context, "VIN").matched;
+  const macContext = semanticEvidence(context, "MAC_ADDRESS").matched;
 
   if (categoryEnabled(options, "EMAIL")) {
     const emailRegex = emailContext ? EMAIL_LOOSE : (options.strictEmail ? EMAIL_STRICT : EMAIL_LOOSE);
-    const emailConfidence = emailContext ? 0.97 : (options.strictEmail ? 0.91 : 0.82);
+    const emailConfidence = confidenceWithEvidence(options.strictEmail ? 0.91 : 0.82, context, "EMAIL");
     scanMatches(content, emailRegex, "EMAIL", emailConfidence, findings, context);
   }
   if (categoryEnabled(options, "API_KEY")) scanMatches(content, API_KEY, "API_KEY", 0.96, findings, context);
@@ -63,20 +68,37 @@ export function scanStructuredFindings(content, options = {}, context = {}, find
   if (categoryEnabled(options, "IPV6")) scanMatches(content, IPV6, "IPV6", 0.82, findings, context);
   if (categoryEnabled(options, "SSN")) scanMatches(content, SSN, "SSN", 0.95, findings, context);
   if (categoryEnabled(options, "US_TAX_ID")) scanMatches(content, US_TIN, "US_TAX_ID", 0.9, findings, context);
+  if (categoryEnabled(options, "IBAN")) {
+    IBAN.lastIndex = 0;
+    let ibanMatch;
+    while ((ibanMatch = IBAN.exec(content)) !== null) {
+      const checksumOk = ibanChecksumOk(ibanMatch[0]);
+      if (!checksumOk && !semanticEvidence(context, "IBAN").matched) continue;
+      addFinding(findings, "IBAN", confidenceWithEvidence(checksumOk ? 0.96 : 0.72, context, "IBAN"), ibanMatch.index, ibanMatch.index + ibanMatch[0].length, ibanMatch[0], [checksumOk ? "iban_checksum" : "iban_shape+context"], context);
+    }
+  }
+  if (categoryEnabled(options, "VAT_ID")) {
+    VAT_ID.lastIndex = 0;
+    let vatMatch;
+    while ((vatMatch = VAT_ID.exec(content)) !== null) {
+      addFinding(findings, "VAT_ID", confidenceWithEvidence(0.86, context, "VAT_ID", 0.96), vatMatch.index, vatMatch.index + vatMatch[0].length, vatMatch[0], ["vat_id_shape"], context);
+    }
+  }
   if (categoryEnabled(options, "MAC_ADDRESS")) scanMatches(content, MAC_ADDRESS, "MAC_ADDRESS", 0.92, findings, context);
   if (categoryEnabled(options, "POTENTIAL_SECRET")) {
     scanMatches(
       content,
         GENERIC_SECRET,
         "POTENTIAL_SECRET",
-        boostConfidence(0.66, contextHasSemanticHint(context, SECRET_HINTS), 0.18, 0.9),
+        confidenceWithEvidence(0.66, context, "POTENTIAL_SECRET", 0.9),
         findings,
         context
       );
   }
   if (categoryEnabled(options, "STREET_ADDRESS")) {
-    scanMatches(content, STREET_ADDRESS_NUMBER_FIRST, "STREET_ADDRESS", 0.78, findings, context);
-    scanMatches(content, STREET_ADDRESS_NAME_FIRST_WITH_NUMBER, "STREET_ADDRESS", 0.8, findings, context);
+    for (const candidate of addressCandidates(content)) {
+      addFinding(findings, "STREET_ADDRESS", addressConfidence(candidate.value, context), candidate.start, candidate.end, candidate.value, ["address_shape"], context);
+    }
   }
 
   if (categoryEnabled(options, "PHONE")) {
@@ -85,26 +107,17 @@ export function scanStructuredFindings(content, options = {}, context = {}, find
     while ((phoneMatch = PHONE.exec(content)) !== null) {
       const digits = phoneMatch[0].replace(/\D/g, "");
       if (digits.length < 7 || digits.length > 15) continue;
+      if (overlapsFinding(findings, phoneMatch.index, phoneMatch.index + phoneMatch[0].length, ["IBAN"])) continue;
       addFinding(
         findings,
         "PHONE",
-        boostConfidence(digits.length >= 10 ? 0.85 : 0.72, phoneContext, 0.08),
+        confidenceWithEvidence(digits.length >= 10 ? 0.85 : 0.72, context, "PHONE"),
         phoneMatch.index,
         phoneMatch.index + phoneMatch[0].length,
         phoneMatch[0],
         [phoneContext ? "phone_pattern+context" : "phone_pattern"],
         context
       );
-    }
-  }
-
-  if (categoryEnabled(options, "STREET_ADDRESS")) {
-    ADDRESS_CONTEXT_PATTERN.lastIndex = 0;
-    let addressMatch;
-    while ((addressMatch = ADDRESS_CONTEXT_PATTERN.exec(content)) !== null) {
-      const original = addressMatch[1];
-      const start = addressMatch.index + addressMatch[0].indexOf(original);
-      addFinding(findings, "STREET_ADDRESS", boostConfidence(0.82, addressContext, 0.06), start, start + original.length, original, ["contextual_address_pattern"], context);
     }
   }
 
@@ -159,6 +172,7 @@ export function scanStructuredFindings(content, options = {}, context = {}, find
     CREDIT_CARD.lastIndex = 0;
     let ccMatch;
     while ((ccMatch = CREDIT_CARD.exec(content)) !== null) {
+      if (overlapsFinding(findings, ccMatch.index, ccMatch.index + ccMatch[0].length, ["IBAN"])) continue;
       const checksumOk = luhnOk(ccMatch[0]);
       addFinding(
         findings,
@@ -170,6 +184,17 @@ export function scanStructuredFindings(content, options = {}, context = {}, find
         [checksumOk ? "luhn_pass" : (cardContext ? "luhn_soft_match+context" : "luhn_soft_match")],
         context
       );
+    }
+  }
+
+  if (categoryEnabled(options, "BIC")) {
+    BIC.lastIndex = 0;
+    let bicMatch;
+    while ((bicMatch = BIC.exec(content)) !== null) {
+      const evidence = semanticEvidence(context, "BIC");
+      const value = bicMatch[0];
+      if (!evidence.matched && !/\b[A-Z]{4}(?:FI|SE|NO|DE|FR|GB|ES)[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b/.test(value)) continue;
+      addFinding(findings, "BIC", confidenceWithEvidence(0.78, context, "BIC", 0.94), bicMatch.index, bicMatch.index + value.length, value, [evidence.matched ? "bic_shape+context" : "bic_shape"], context);
     }
   }
 
@@ -190,8 +215,8 @@ export function scanStructuredFindings(content, options = {}, context = {}, find
         addFinding(findings, "VIN", 0.9, 0, content.length, content, ["field_hint:vin"], context);
       } else if (categoryEnabled(options, "MAC_ADDRESS") && macContext && /^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/.test(trimmed)) {
         addFinding(findings, "MAC_ADDRESS", 0.92, 0, content.length, content, ["field_hint:mac"], context);
-      } else if (categoryEnabled(options, "STREET_ADDRESS") && addressContext && /\d/.test(trimmed) && /[A-Za-z]/.test(trimmed)) {
-        addFinding(findings, "STREET_ADDRESS", 0.74, 0, content.length, content, ["field_hint:address"], context);
+      } else if (categoryEnabled(options, "STREET_ADDRESS") && isLikelyStreetAddress(trimmed)) {
+        addFinding(findings, "STREET_ADDRESS", addressConfidence(trimmed, context), 0, content.length, content, ["field_hint:address_shape"], context);
       }
     }
   }

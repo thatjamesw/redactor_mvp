@@ -131,6 +131,58 @@
     "minFindings": 2
   },
   {
+    "name": "international latin-script address shapes do not need suffix dictionaries",
+    "threshold": "medium",
+    "input": "Office: Via Roma 3\nBranch: Calle Gran Via 28\nReference: Version 10 Build 42\n",
+    "expectPresent": [
+      "Office: [REDACTED]",
+      "Branch: [REDACTED]",
+      "Reference: Version 10 Build 42"
+    ],
+    "expectAbsent": [
+      "Via Roma 3",
+      "Calle Gran Via 28"
+    ],
+    "minFindings": 2
+  },
+  {
+    "name": "csv profiles unknown headers from repeated value shapes",
+    "fileName": "kunden.csv",
+    "threshold": "medium",
+    "input": "Kontakt,Ort,Anschrift\nJames Wright,Helsinki,Via Roma 3\nMaria Anders,Berlin,Calle Gran Via 28\n",
+    "expectPresent": [
+      "[REDACTED],[REDACTED],[REDACTED]",
+      "[REDACTED],[REDACTED],[REDACTED]"
+    ],
+    "expectAbsent": [
+      "James Wright",
+      "Maria Anders",
+      "Helsinki",
+      "Berlin",
+      "Via Roma 3",
+      "Calle Gran Via 28"
+    ],
+    "minFindings": 6
+  },
+  {
+    "name": "european financial identifiers are detected without address false positives",
+    "threshold": "medium",
+    "input": "IBAN: FI21 1234 5600 0007 85\nBIC: NDEAFIHH\nVAT: DE123456789\nOffice: Via Roma 3\n",
+    "expectPresent": [
+      "IBAN: [REDACTED]",
+      "BIC: [REDACTED]",
+      "VAT: [REDACTED]",
+      "Office: [REDACTED]"
+    ],
+    "expectAbsent": [
+      "FI21 1234 5600 0007 85",
+      "NDEAFIHH",
+      "DE123456789",
+      "Via Roma 3"
+    ],
+    "minFindings": 4
+  },
+  {
     "name": "identity seed propagation catches mixed-case and leetspeak variants",
     "fileName": "notes.txt",
     "threshold": "medium",
