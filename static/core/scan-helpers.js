@@ -12,7 +12,6 @@ const PRECISE_PROFILE_LABELS = new Set([
   "MAC_ADDRESS",
   "VIN",
   "STREET_ADDRESS",
-  "POTENTIAL_SECRET",
 ]);
 
 function profileGroupKey(context = {}) {
@@ -36,6 +35,7 @@ function enrichValuesWithProfiles(values) {
   }));
 
   for (const item of analysed) {
+    if (item.context?.disableProfile) continue;
     if (!item.groupKey || !String(item.value ?? "").trim()) continue;
     if (!groups.has(item.groupKey)) groups.set(item.groupKey, []);
     groups.get(item.groupKey).push(item);

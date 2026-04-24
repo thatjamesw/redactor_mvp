@@ -10,6 +10,7 @@ const IPV6 = /\b(?:[A-F0-9]{1,4}:){7}[A-F0-9]{1,4}\b/gi;
 const API_KEY = /\bsk-[A-Za-z0-9]{8,}\b/g;
 const AWS_AKID = /\bAKIA[0-9A-Z]{16}\b/g;
 const JWT = /\beyJ[0-9A-Za-z_\-]+\.[0-9A-Za-z_\-]+\.[0-9A-Za-z_\-]+\b/g;
+const URL = /https?:\/\/[^\s`|<>)]+/g;
 const GENERIC_SECRET = /\b[A-Za-z0-9_\-]{24,}\b/g;
 const CREDIT_CARD = /\b(?:\d[ -]*?){13,19}\b/g;
 const IBAN = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}\b/gi;
@@ -24,6 +25,7 @@ const MRZ_PASSPORT_NUMBER = /\b[A-Z][0-9]{6,8}\b/g;
 const MRZ_LINE = /\bP<[A-Z<]{10,}|\b[A-Z0-9<]{20,}\b/g;
 const DRIVERS_LICENSE_GENERIC = /\b[A-Z]{1,2}\d{6,8}\b/g;
 const PHONE = /\b(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)\d{3,4}[\s.-]?\d{3,4}\b/g;
+const DATE_LIKE = /\b(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})\b/;
 const PASSPORT_DISALLOWED = /^(?:true|false|null)$/i;
 const VIN_DISALLOWED = /[IOQ]/;
 
@@ -43,6 +45,20 @@ function ibanChecksumOk(value) {
 
 function overlapsFinding(findings, start, end, labels) {
   return findings.some((finding) => labels.includes(finding.label) && start >= finding.start && end <= finding.end);
+}
+
+function scanUrlSecrets(content, context, findings) {
+  URL.lastIndex = 0;
+  let urlMatch;
+  while ((urlMatch = URL.exec(content)) !== null) {
+    const url = urlMatch[0];
+    if (!/\/(?:api|events|hooks|webhook|v\d+)\//i.test(url)) continue;
+    const tokenMatch = /(?:^|[/?#&=:-])([A-Za-z0-9_-]{32,})(?=$|[/?#&.=:-])/.exec(url);
+    if (!tokenMatch) continue;
+    const delimiterOffset = tokenMatch[0].indexOf(tokenMatch[1]);
+    const start = urlMatch.index + tokenMatch.index + delimiterOffset;
+    addFinding(findings, "POTENTIAL_SECRET", 0.88, start, start + tokenMatch[1].length, tokenMatch[1], ["api_url_token"], context);
+  }
 }
 
 export function scanStructuredFindings(content, options = {}, context = {}, findings = []) {
@@ -86,6 +102,7 @@ export function scanStructuredFindings(content, options = {}, context = {}, find
   }
   if (categoryEnabled(options, "MAC_ADDRESS")) scanMatches(content, MAC_ADDRESS, "MAC_ADDRESS", 0.92, findings, context);
   if (categoryEnabled(options, "POTENTIAL_SECRET")) {
+    scanUrlSecrets(content, context, findings);
     scanMatches(
       content,
         GENERIC_SECRET,
@@ -107,6 +124,7 @@ export function scanStructuredFindings(content, options = {}, context = {}, find
     while ((phoneMatch = PHONE.exec(content)) !== null) {
       const digits = phoneMatch[0].replace(/\D/g, "");
       if (digits.length < 7 || digits.length > 15) continue;
+      if (DATE_LIKE.test(phoneMatch[0])) continue;
       if (overlapsFinding(findings, phoneMatch.index, phoneMatch.index + phoneMatch[0].length, ["IBAN"])) continue;
       addFinding(
         findings,

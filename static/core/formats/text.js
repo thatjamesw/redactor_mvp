@@ -17,6 +17,13 @@ const { fromMarkdown } = markdownModule;
 const { gfmTableFromMarkdown } = markdownTableModule;
 const { gfmTable } = micromarkTableModule;
 
+const DESCRIPTOR_HEADERS = new Set([
+  "alert", "alert family", "capability", "channel", "component", "date", "definition", "dr field", "environment",
+  "escalate after", "escalate when", "field", "frequency", "impact", "method", "minimum role", "mitigation",
+  "ongoing updates", "ops scope", "owner", "primary component", "purpose", "required ops action", "retention",
+  "risk", "role", "severity", "system", "trigger", "type", "use", "version", "workflow",
+]);
+
 function nodePlainText(node) {
   if (!node) return "";
   if (node.type === "text" || node.type === "inlineCode") return node.value || "";
@@ -56,12 +63,22 @@ function cellValueWithOffsets(source, cell) {
   const fallbackEnd = cell.position?.end?.offset ?? fallbackStart;
   const start = first?.position?.start?.offset ?? fallbackStart;
   const end = last?.position?.end?.offset ?? fallbackEnd;
+  const original = source.slice(start, end);
+  const textOffset = original.indexOf(text);
+  if (textOffset >= 0) {
+    return {
+      text,
+      start: start + textOffset,
+      end: start + textOffset + text.length,
+      original: text,
+    };
+  }
 
   return {
     text,
     start,
     end: Math.max(start, end),
-    original: source.slice(start, end),
+    original,
   };
 }
 
@@ -101,6 +118,10 @@ function visitNodes(node, onNode) {
   node.children.forEach((child) => visitNodes(child, onNode));
 }
 
+function normalizedHeader(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function markdownTableFindings(source, options, kind) {
   const findings = [];
   const cells = [];
@@ -118,6 +139,8 @@ function markdownTableFindings(source, options, kind) {
     if (!headerRow?.children?.length || !dataRows.length) return;
 
     const headers = headerRow.children.map((cell, columnIndex) => cellValueWithOffsets(source, cell)?.text || `column_${columnIndex + 1}`);
+    const normalizedHeaders = headers.map((header) => normalizedHeader(header));
+    const fieldValueTable = normalizedHeaders.length === 2 && normalizedHeaders[0] === "field" && normalizedHeaders[1] === "value";
     dataRows.forEach((row, rowIndex) => {
       const rowCells = (row.children || []).map((cell) => cellValueWithOffsets(source, cell));
       const emailIndex = rowCells.findIndex((cell) => cell && /^[A-Za-z0-9._%+\-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,63}$/.test(cell.text));
@@ -133,11 +156,14 @@ function markdownTableFindings(source, options, kind) {
         if (!cellData) return;
 
         const header = headers[columnIndex] || `column_${columnIndex + 1}`;
+        if (fieldValueTable && columnIndex === 0) return;
+        const contextHeader = fieldValueTable && columnIndex === 1 && rowCells[0]?.text ? rowCells[0].text : header;
+        const descriptorColumn = DESCRIPTOR_HEADERS.has(normalizedHeader(header));
         const profileHints = [];
-        if (contactAnchorIndex !== -1 && columnIndex === contactAnchorIndex - 1 && /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+){1,3}$/u.test(cellData.text)) {
+        if (!descriptorColumn && contactAnchorIndex !== -1 && columnIndex === contactAnchorIndex - 1 && /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+){1,3}$/u.test(cellData.text)) {
           profileHints.push("PERSON");
         }
-        if (contactAnchorIndex !== -1 && columnIndex > contactAnchorIndex && /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+){0,2}$/u.test(cellData.text)) {
+        if (!descriptorColumn && contactAnchorIndex !== -1 && columnIndex > contactAnchorIndex && /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]+){0,2}$/u.test(cellData.text)) {
           profileHints.push("PLACE");
         }
         cells.push({
@@ -149,11 +175,12 @@ function markdownTableFindings(source, options, kind) {
           value: cellData.text,
           context: {
             kind,
-            keyHint: header,
-            previewPath: `row ${rowIndex + 1}.${header}`,
+            keyHint: contextHeader,
+            previewPath: `row ${rowIndex + 1}.${contextHeader}`,
             rowIndex,
             columnIndex,
             tableIndex: currentTableIndex,
+            disableProfile: descriptorColumn || fieldValueTable,
             profileHints,
           },
         });

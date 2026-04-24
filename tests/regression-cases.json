@@ -183,6 +183,20 @@
     "minFindings": 4
   },
   {
+    "name": "markdown field-value labels survive high confidence while api url tokens redact",
+    "fileName": "runbook.md",
+    "input": "| Field | Value |\n| -- | -- |\n| Service | Keycloak and supporting Azure resources |\n| Version | 2.1 |\n\n| Environment | Action Group | Resource Group | iLert Events API endpoint |\n| -- | -- | -- | -- |\n| Dev | `ag-platform-dev` | `rg-keycloak-monitoring-dev` | `https://api.ilert.com/api/v1/events/azure-alerts/il1aza02266da6f4d442634c679051263ecda80c55482bd5bf3b` |\n",
+    "expectPresent": [
+      "| Service | Keycloak and supporting Azure resources |",
+      "| Version | 2.1 |",
+      "| Dev | `ag-platform-dev` | `rg-keycloak-monitoring-dev` | `https://api.ilert.com/api/v1/events/azure-alerts/[REDACTED]` |"
+    ],
+    "expectAbsent": [
+      "il1aza02266da6f4d442634c679051263ecda80c55482bd5bf3b"
+    ],
+    "minFindings": 2
+  },
+  {
     "name": "identity seed propagation catches mixed-case and leetspeak variants",
     "fileName": "notes.txt",
     "threshold": "medium",

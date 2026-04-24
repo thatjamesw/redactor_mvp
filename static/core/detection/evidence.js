@@ -21,7 +21,11 @@ const FIELD_ALIASES = {
 };
 
 const GENERIC_SENSITIVE_TOKENS = new Set(["id", "identifier", "number", "num", "no", "nr", "code", "value"]);
-const IDENTITY_CONTEXT_BLOCKLIST = new Set(["alias", "change", "description", "note", "notes", "role", "status", "title", "type", "version"]);
+const IDENTITY_CONTEXT_BLOCKLIST = new Set([
+  "alert", "alert family", "capability", "change", "channel", "component", "definition", "description", "dr field",
+  "environment", "escalate", "field", "frequency", "impact", "method", "mitigation", "note", "notes", "purpose",
+  "retention", "risk", "role", "severity", "status", "system", "title", "trigger", "type", "use", "version",
+]);
 const ADDRESS_TOKEN = /[\p{Script=Latin}\p{M}0-9.'\u2019/-]+/gu;
 const POSTAL_CODE = /\b(?:[A-Z]{1,2}[-\s]?)?\d{3,6}(?:[-\s]\d{2,4})?\b/i;
 const OBVIOUS_NON_ADDRESS = /\b(?:iban|bic|swift|vat|version|build|invoice|order|project|issue|ticket|room|page|section|chapter|row|column)\b/i;
@@ -42,7 +46,7 @@ const PASSPORT_VALUE = /^(?=.*[A-Z])(?=.*\d)[A-Z0-9-]{6,12}$/;
 const LICENSE_VALUE = /^[A-Z0-9-]{6,16}$/;
 const TAX_VALUE = /^[A-Z0-9-]{8,15}$/;
 const PERSON_VALUE = /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M} ,.'\u2019-]{1,60}$/u;
-const ORG_VALUE = /^[\p{Script=Latin}\p{M}0-9][\p{Script=Latin}\p{M}0-9 &.,'\u2019-]{2,80}$/u;
+const ORG_VALUE = /^(?=.*\p{Script=Latin})[\p{Script=Latin}\p{M}0-9][\p{Script=Latin}\p{M}0-9 &.,'\u2019-]{2,80}$/u;
 
 function contextSegments(context = {}) {
   return [
@@ -95,6 +99,10 @@ export function semanticEvidence(context = {}, label) {
     reasons.push("generic_sensitive_key");
   }
   return { matched: score > 0, score: Math.min(score, 0.24), reasons };
+}
+
+export function contextBlocksIdentity(context = {}) {
+  return identityContextBlocked(contextSegments(context));
 }
 
 export function confidenceWithEvidence(baseConfidence, context, label, ceiling = 0.99) {
@@ -172,8 +180,8 @@ export function valueShapeLabels(value) {
   if (TAX_VALUE.test(trimmed)) labels.push("US_TAX_ID");
   if (SECRET_VALUE.test(trimmed)) labels.push("POTENTIAL_SECRET");
   if (isLikelyStreetAddress(trimmed)) labels.push("STREET_ADDRESS");
-  if (PERSON_VALUE.test(trimmed) && trimmed.split(/\s+/).length >= 2) labels.push("PERSON");
-  if (PERSON_VALUE.test(trimmed)) labels.push("PLACE");
-  if (ORG_VALUE.test(trimmed)) labels.push("ORG");
+  if (!DATE_LIKE.test(trimmed) && PERSON_VALUE.test(trimmed) && trimmed.split(/\s+/).length >= 2) labels.push("PERSON");
+  if (!DATE_LIKE.test(trimmed) && PERSON_VALUE.test(trimmed)) labels.push("PLACE");
+  if (!DATE_LIKE.test(trimmed) && ORG_VALUE.test(trimmed)) labels.push("ORG");
   return labels;
 }
