@@ -157,7 +157,10 @@ function renderSelectionTrust() {
     const removed = [...recommendedSelectionState].filter((id) => !selectionState.has(id)).length;
     selectionNote.textContent = `You adjusted the default selection: ${added} added, ${removed} removed. Current output reflects ${currentCount} selected finding${currentCount === 1 ? "" : "s"}.`;
   }
-  if (leftCount > 0) {
+  if (inputDirtySinceScan) {
+    outputRisk.textContent = "The content changed after this output was generated. Refresh the scan before copying or exporting.";
+    outputRisk.className = "risk-banner warn";
+  } else if (leftCount > 0) {
     outputRisk.textContent = `${leftCount} finding${leftCount === 1 ? "" : "s"} remain outside the current output. Review before copying or exporting if you want the safest possible result.`;
     outputRisk.className = "risk-banner warn";
   } else {
@@ -168,14 +171,17 @@ function renderSelectionTrust() {
 
 function refreshActions() {
   const hasOutput = Boolean((outputState?.text || "").trim());
-  const downloadable = Boolean((outputState?.text || "").trim() || outputState?.imageDataUrl);
-  const copyable = hasOutput && outputState?.copyable !== false && !outputState?.isImage;
+  const outputStale = Boolean(inputDirtySinceScan && outputState);
+  const downloadable = !outputStale && Boolean((outputState?.text || "").trim() || outputState?.imageDataUrl);
+  const copyable = !outputStale && hasOutput && outputState?.copyable !== false && !outputState?.isImage;
   copyButton.disabled = !copyable;
   downloadButton.disabled = !downloadable;
   stickyCopyButton.disabled = !copyable;
   stickyDownloadButton.disabled = !downloadable;
   stickySelection.textContent = `${selectionState.size} selected`;
-  stickySummary.textContent = downloadable
+  stickySummary.textContent = outputStale
+    ? "Content changed. Refresh scan before copying or exporting."
+    : downloadable
     ? "Current output is ready to copy or export."
     : (scanState ? "Adjust findings and output will update automatically." : "Run a scan to generate safe output.");
   if (refreshScanButton) {
@@ -504,17 +510,18 @@ function selectedIds() {
 function markInputDirty() {
   if (!scanState) return;
   inputDirtySinceScan = true;
+  renderSelectionTrust();
   refreshActions();
   setStatus(inputStatus, "Content changed. Refresh scan to keep reviewed findings and scan the new data.", "warn");
+  setStatus(outputStatus, "Output is stale because the source content changed. Refresh scan before copying or exporting.", "warn");
 }
 
-function findingSelectionKey(finding) {
+function findingSelectionKey(finding, { includeOffsets = true } = {}) {
   const context = finding.context || {};
   return JSON.stringify({
     label: finding.label,
     original: finding.original,
-    start: finding.start,
-    end: finding.end,
+    ...(includeOffsets ? { start: finding.start, end: finding.end } : {}),
     kind: context.kind,
     previewPath: context.previewPath,
     path: context.path,
@@ -527,21 +534,44 @@ function findingSelectionKey(finding) {
   });
 }
 
+function countedFindingKeys(findings, predicate, keyOptions) {
+  const counts = new Map();
+  for (const finding of findings) {
+    if (!predicate(finding)) continue;
+    const key = findingSelectionKey(finding, keyOptions);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return counts;
+}
+
+function consumeFindingKey(counts, finding, keyOptions) {
+  const key = findingSelectionKey(finding, keyOptions);
+  const count = counts.get(key) || 0;
+  if (count <= 0) return false;
+  if (count === 1) counts.delete(key);
+  else counts.set(key, count - 1);
+  return true;
+}
+
 function restoreReviewedSelection(previousScan, previousSelected, previousRecommended) {
   const nextRecommended = new Set(scanState.findings.filter((item) => item.confidence >= autoSelectThreshold()).map((item) => item.id));
-  const selectedKeys = new Set((previousScan?.findings || [])
-    .filter((finding) => previousSelected.has(finding.id))
-    .map(findingSelectionKey));
-  const skippedKeys = new Set((previousScan?.findings || [])
-    .filter((finding) => previousRecommended.has(finding.id) && !previousSelected.has(finding.id))
-    .map(findingSelectionKey));
+  const previousFindings = previousScan?.findings || [];
+  const selectedExact = countedFindingKeys(previousFindings, (finding) => previousSelected.has(finding.id), { includeOffsets: true });
+  const selectedStable = countedFindingKeys(previousFindings, (finding) => previousSelected.has(finding.id), { includeOffsets: false });
+  const skippedExact = countedFindingKeys(previousFindings, (finding) => previousRecommended.has(finding.id) && !previousSelected.has(finding.id), { includeOffsets: true });
+  const skippedStable = countedFindingKeys(previousFindings, (finding) => previousRecommended.has(finding.id) && !previousSelected.has(finding.id), { includeOffsets: false });
 
   recommendedSelectionState = nextRecommended;
   selectionState = new Set();
   for (const finding of scanState.findings) {
-    const key = findingSelectionKey(finding);
-    if (selectedKeys.has(key)) selectionState.add(finding.id);
-    else if (!skippedKeys.has(key) && nextRecommended.has(finding.id)) selectionState.add(finding.id);
+    const wasSelected = consumeFindingKey(selectedExact, finding, { includeOffsets: true })
+      || consumeFindingKey(selectedStable, finding, { includeOffsets: false });
+    const wasSkipped = !wasSelected && (
+      consumeFindingKey(skippedExact, finding, { includeOffsets: true })
+      || consumeFindingKey(skippedStable, finding, { includeOffsets: false })
+    );
+    if (wasSelected) selectionState.add(finding.id);
+    else if (!wasSkipped && nextRecommended.has(finding.id)) selectionState.add(finding.id);
   }
 }
 
@@ -906,17 +936,29 @@ stickySafeCopyButton.addEventListener("click", async () => {
 
 document.querySelector("#copy-button").addEventListener("click", async () => {
   if (!outputState?.text) return;
+  if (inputDirtySinceScan) {
+    setStatus(outputStatus, "Refresh scan before copying. The current output was generated from older content.", "warn");
+    return;
+  }
   const hasResidualRisk = Boolean(scanState && scanState.findings.length > selectionState.size);
   await copyOutput(outputState.text, hasResidualRisk ? "Output copied. Some findings still remain outside the current output." : "Output copied to your clipboard.");
 });
 stickyCopyButton.addEventListener("click", async () => {
   if (!outputState?.text) return;
+  if (inputDirtySinceScan) {
+    setStatus(outputStatus, "Refresh scan before copying. The current output was generated from older content.", "warn");
+    return;
+  }
   const hasResidualRisk = Boolean(scanState && scanState.findings.length > selectionState.size);
   await copyOutput(outputState.text, hasResidualRisk ? "Output copied. Some findings still remain outside the current output." : "Output copied to your clipboard.");
 });
 
 document.querySelector("#download-button").addEventListener("click", () => {
   if (!outputState) return;
+  if (inputDirtySinceScan) {
+    setStatus(outputStatus, "Refresh scan before exporting. The current output was generated from older content.", "warn");
+    return;
+  }
   const downloadName = outputState.fileName?.startsWith("redacted_") ? outputState.fileName : `redacted_${outputState.fileName || "output.txt"}`;
   const link = document.createElement("a");
   let objectUrl = "";
@@ -938,6 +980,10 @@ document.querySelector("#download-button").addEventListener("click", () => {
 });
 stickyDownloadButton.addEventListener("click", () => {
   if (!outputState) return;
+  if (inputDirtySinceScan) {
+    setStatus(outputStatus, "Refresh scan before exporting. The current output was generated from older content.", "warn");
+    return;
+  }
   document.querySelector("#download-button").click();
 });
 
@@ -1039,7 +1085,9 @@ fileInput.addEventListener("change", async () => {
     markInputDirty();
     fileSummary.textContent = `${fileState.name} loaded locally (${Math.round(fileState.size / 1024) || 1} KB). Pasted text is ignored while a file is selected.`;
     renderFormatNote(lightweightFormatInfo(fileState, fileState.name), formatNote);
-    setStatus(inputStatus, "File loaded locally. Click LLM-safe copy for the fastest workflow.", "success");
+    setStatus(inputStatus, scanState
+      ? "File loaded locally. Refresh scan to keep reviewed findings, or use LLM-safe copy for the fastest workflow."
+      : "File loaded locally. Click LLM-safe copy for the fastest workflow.", "success");
   } catch (error) {
     fileState = null;
     setStatus(inputStatus, `Could not read file: ${error.message}`, "error");
@@ -1062,7 +1110,9 @@ document.addEventListener("paste", async (event) => {
     markInputDirty();
     fileSummary.textContent = `${fileState.name} pasted from clipboard. OCR will run locally in the browser.`;
     renderFormatNote(lightweightFormatInfo(fileState, fileState.name), formatNote);
-    setStatus(inputStatus, "Image pasted from clipboard. Click scan or LLM-safe copy to process it.", "success");
+    setStatus(inputStatus, scanState
+      ? "Image pasted from clipboard. Refresh scan to keep reviewed findings, or use LLM-safe copy to process it."
+      : "Image pasted from clipboard. Click scan or LLM-safe copy to process it.", "success");
   } catch (error) {
     setStatus(inputStatus, `Could not read pasted image: ${error.message}`, "error");
   }
