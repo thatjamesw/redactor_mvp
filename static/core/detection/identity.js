@@ -9,6 +9,7 @@ const CONTACT_SEGMENT_PLACE = /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\
 const EMAIL_LOOSE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,63}\b/g;
 const IDENTITY_CANDIDATE = /\b[\p{Script=Latin}\p{M}0-9@$][\p{Script=Latin}\p{M}0-9@$.'\u2019-]{1,}(?:\s+[\p{Script=Latin}\p{M}0-9@$][\p{Script=Latin}\p{M}0-9@$.'\u2019-]{1,}){0,2}\b/gu;
 const STANDALONE_NAME_LINE = /^[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]{1,}(?:\s+[\p{Script=Latin}\p{M}][\p{Script=Latin}\p{M}.'\u2019-]{1,}){1,2}$/u;
+const PROPER_NAME_TOKEN = /^[\p{Lu}][\p{Ll}\p{M}.'\u2019-]+$/u;
 const NON_NAME_LINE_HINTS = /^(?:project manager|manager|owner|service owner|customer primary|customer secondary|incident response|runbook|rollback|support team|security team|engineering team)$/i;
 const NON_NAME_TOKENS = new Set([
   "and", "or", "the", "for", "with", "from", "into", "onto", "over", "under",
@@ -85,32 +86,90 @@ function addContactLineIdentityFindings(content, findings, context) {
   }
 }
 
-function addStandaloneNameLineFindings(content, findings, context) {
+function lineNameCandidate(line, lineStart) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.includes(",") || trimmed.includes("@") || /\d/.test(trimmed)) return null;
+  if (NON_NAME_LINE_HINTS.test(trimmed)) return null;
+
+  const rawTokens = trimmed.split(/\s+/);
+  const tokens = rawTokens.map((token) => token.toLowerCase());
+  if (tokens.some((token) => NON_NAME_TOKENS.has(token))) return null;
+  if (COUNTRY_NAMES.has(trimmed.toLowerCase())) return null;
+
+  const startOffset = line.indexOf(trimmed);
+  return {
+    trimmed,
+    rawTokens,
+    tokens,
+    start: lineStart + Math.max(0, startOffset),
+  };
+}
+
+function pairKey(tokens, index = 0) {
+  return tokens.slice(index, index + 2).join(" ");
+}
+
+function addStandaloneNameLineFindings(content, findings, context, externalSeeds = []) {
   const lines = content.split(/\r?\n/);
   let offset = 0;
+  const lineCandidates = [];
   const candidates = [];
+  const knownNamePairs = new Set(
+    externalSeeds
+      .filter((seed) => seed.label === "PERSON" && seed.tokens.length === 2)
+      .map((seed) => seed.tokens.join(" "))
+  );
+
   for (const line of lines) {
     const lineStart = offset;
     offset += line.length + 1;
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.includes(",") || trimmed.includes("@") || /\d/.test(trimmed)) continue;
-    if (!STANDALONE_NAME_LINE.test(trimmed)) continue;
-    if (NON_NAME_LINE_HINTS.test(trimmed)) continue;
+    const candidate = lineNameCandidate(line, lineStart);
+    if (!candidate) continue;
+    lineCandidates.push(candidate);
+    if (STANDALONE_NAME_LINE.test(candidate.trimmed) && candidate.rawTokens.length === 2) {
+      knownNamePairs.add(pairKey(candidate.tokens));
+    }
+  }
 
-    const tokens = trimmed.toLowerCase().split(/\s+/);
-    if (tokens.some((token) => NON_NAME_TOKENS.has(token))) continue;
-    if (COUNTRY_NAMES.has(trimmed.toLowerCase())) continue;
+  for (const { trimmed, rawTokens, tokens, start } of lineCandidates) {
+    if (STANDALONE_NAME_LINE.test(trimmed)) {
+      candidates.push({ start, end: start + trimmed.length, original: trimmed });
+      continue;
+    }
 
-    const startOffset = line.indexOf(trimmed);
-    const start = lineStart + Math.max(0, startOffset);
-    candidates.push({ start, end: start + trimmed.length, original: trimmed });
+    const pairCounts = new Map();
+    for (let index = 0; index < tokens.length; index += 2) {
+      const key = pairKey(tokens, index);
+      pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
+    }
+    const supportedPairs = tokens.every((_, index) => {
+      if (index % 2 === 1) return true;
+      const key = pairKey(tokens, index);
+      return knownNamePairs.has(key) || (pairCounts.get(key) || 0) > 1;
+    });
+    const looksLikeAdjacentNames = rawTokens.length >= 4
+      && rawTokens.length <= 20
+      && rawTokens.length % 2 === 0
+      && supportedPairs;
+    if (!looksLikeAdjacentNames) continue;
+
+    const tokenMatches = [...trimmed.matchAll(/\S+/gu)];
+    for (let index = 0; index < tokenMatches.length; index += 2) {
+      const pairStart = tokenMatches[index].index;
+      const pairEnd = tokenMatches[index + 1].index + tokenMatches[index + 1][0].length;
+      candidates.push({
+        start: start + pairStart,
+        end: start + pairEnd,
+        original: trimmed.slice(pairStart, pairEnd),
+      });
+    }
   }
 
   const nameListConfidence = candidates.length >= 2 ? 0.84 : 0.63;
   for (const candidate of candidates) {
     const properCased = candidate.original
       .split(/\s+/)
-      .every((token) => /^[\p{Lu}][\p{Ll}\p{M}.'\u2019-]+$/u.test(token));
+      .every((token) => PROPER_NAME_TOKEN.test(token));
     const confidence = Math.max(nameListConfidence, properCased ? 0.82 : 0.63);
     addFinding(findings, "PERSON", confidence, candidate.start, candidate.end, candidate.original, ["standalone_name_line"], context);
   }
@@ -158,7 +217,7 @@ export function scanIdentityFindings(content, options = {}, context = {}, findin
 
   if (options.detectNames && (categoryEnabled(options, "PERSON") || categoryEnabled(options, "PLACE"))) {
     addContactLineIdentityFindings(content, findings, context);
-    if (categoryEnabled(options, "PERSON")) addStandaloneNameLineFindings(content, findings, context);
+    if (categoryEnabled(options, "PERSON")) addStandaloneNameLineFindings(content, findings, context, options.identitySeeds || []);
     propagateIdentitySeeds(content, findings, context, options.identitySeeds || []);
   }
 

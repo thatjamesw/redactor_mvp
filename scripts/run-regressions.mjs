@@ -49,6 +49,9 @@ async function runCase(testCase) {
   if (typeof testCase.minFindings === "number" && scan.summary.total < testCase.minFindings) {
     failures.push(`expected at least ${testCase.minFindings} findings, got ${scan.summary.total}`);
   }
+  if (typeof testCase.maxFindings === "number" && scan.summary.total > testCase.maxFindings) {
+    failures.push(`expected at most ${testCase.maxFindings} findings, got ${scan.summary.total}`);
+  }
 
   return { name: testCase.name, failures };
 }

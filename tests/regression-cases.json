@@ -13,6 +13,20 @@
     "minFindings": 3
   },
   {
+    "name": "adjacent standalone full names on one line are detected",
+    "threshold": "high",
+    "input": "James Wright\nJames Wright\nJames Smith \nJames Wright James Smith\nJames Wright James Smith James Wright James Smith James Wright James Smith James Wright James Smith\nJames Wright\n",
+    "expectPresent": [
+      "[REDACTED]\n[REDACTED]\n[REDACTED] \n[REDACTED] [REDACTED]\n[REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED]\n[REDACTED]\n"
+    ],
+    "expectAbsent": [
+      "James Wright",
+      "James Smith",
+      "James Wright James Smith"
+    ],
+    "minFindings": 14
+  },
+  {
     "name": "full international email is redacted in CSV",
     "fileName": "contacts.csv",
     "threshold": "medium",
@@ -113,6 +127,57 @@
       "tom smith"
     ],
     "minFindings": 1
+  },
+  {
+    "name": "adjacent lowercase names from an observed list are detected",
+    "threshold": "high",
+    "input": "james wright\njames wright\njames smith \njames wright james smith\njames wright james smith james wright james smith james wright james smith james wright james smith\njames wright\n",
+    "expectPresent": [
+      "[REDACTED]\n[REDACTED]\n[REDACTED] \n[REDACTED] [REDACTED]\n[REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED]\n[REDACTED]\n"
+    ],
+    "expectAbsent": [
+      "james wright",
+      "james smith",
+      "james wright james smith"
+    ],
+    "minFindings": 14
+  },
+  {
+    "name": "adjacent lowercase names can use later standalone evidence",
+    "threshold": "high",
+    "input": "james wright james smith\njames wright\njames smith\n",
+    "expectPresent": [
+      "[REDACTED] [REDACTED]\n[REDACTED]\n[REDACTED]\n"
+    ],
+    "expectAbsent": [
+      "james wright",
+      "james smith"
+    ],
+    "minFindings": 4
+  },
+  {
+    "name": "json identity seeds split adjacent lowercase names across values",
+    "threshold": "high",
+    "input": "{\"full_name\":\"james wright\",\"notes\":\"james wright james smith\",\"other_name\":\"james smith\"}\n",
+    "expectPresent": [
+      "\"full_name\":\"[REDACTED]\"",
+      "\"notes\":\"[REDACTED] [REDACTED]\"",
+      "\"other_name\":\"[REDACTED]\""
+    ],
+    "expectAbsent": [
+      "james wright",
+      "james smith"
+    ],
+    "minFindings": 4
+  },
+  {
+    "name": "title case business phrase is not split as adjacent names",
+    "threshold": "high",
+    "input": "Quarterly Revenue Annual Review\n",
+    "expectPresent": [
+      "Quarterly Revenue Annual Review\n"
+    ],
+    "maxFindings": 0
   },
   {
     "name": "plain text contact block is not misclassified as csv",

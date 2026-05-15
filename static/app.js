@@ -38,6 +38,7 @@ const outputNote = document.querySelector("#output-note");
 const copyButton = document.querySelector("#copy-button");
 const downloadButton = document.querySelector("#download-button");
 const stickySafeCopyButton = document.querySelector("#sticky-safe-copy");
+const stickyRefreshScanButton = document.querySelector("#sticky-refresh-scan-button");
 const stickyCopyButton = document.querySelector("#sticky-copy-button");
 const stickyDownloadButton = document.querySelector("#sticky-download-button");
 const stickySelection = document.querySelector("#sticky-selection");
@@ -69,6 +70,7 @@ let activeFocusKind = "";
 let activeFocusPanel = null;
 let focusPlaceholder = null;
 let inputDirtySinceScan = false;
+let configDirtySinceScan = false;
 
 const presets = {
   llm_safe: {
@@ -157,8 +159,9 @@ function renderSelectionTrust() {
     const removed = [...recommendedSelectionState].filter((id) => !selectionState.has(id)).length;
     selectionNote.textContent = `You adjusted the default selection: ${added} added, ${removed} removed. Current output reflects ${currentCount} selected finding${currentCount === 1 ? "" : "s"}.`;
   }
-  if (inputDirtySinceScan) {
-    outputRisk.textContent = "The content changed after this output was generated. Refresh the scan before copying or exporting.";
+  if (inputDirtySinceScan || configDirtySinceScan) {
+    const staleReason = inputDirtySinceScan ? "content" : "scan configuration";
+    outputRisk.textContent = `The ${staleReason} changed after this output was generated. Refresh the scan before copying or exporting.`;
     outputRisk.className = "risk-banner warn";
   } else if (leftCount > 0) {
     outputRisk.textContent = `${leftCount} finding${leftCount === 1 ? "" : "s"} remain outside the current output. Review before copying or exporting if you want the safest possible result.`;
@@ -171,7 +174,8 @@ function renderSelectionTrust() {
 
 function refreshActions() {
   const hasOutput = Boolean((outputState?.text || "").trim());
-  const outputStale = Boolean(inputDirtySinceScan && outputState);
+  const scanStale = inputDirtySinceScan || configDirtySinceScan;
+  const outputStale = Boolean(scanStale && outputState);
   const downloadable = !outputStale && Boolean((outputState?.text || "").trim() || outputState?.imageDataUrl);
   const copyable = !outputStale && hasOutput && outputState?.copyable !== false && !outputState?.isImage;
   copyButton.disabled = !copyable;
@@ -180,12 +184,15 @@ function refreshActions() {
   stickyDownloadButton.disabled = !downloadable;
   stickySelection.textContent = `${selectionState.size} selected`;
   stickySummary.textContent = outputStale
-    ? "Content changed. Refresh scan before copying or exporting."
+    ? (inputDirtySinceScan ? "Content changed. Refresh scan before copying or exporting." : "Scan settings changed. Refresh scan before copying or exporting.")
     : downloadable
     ? "Current output is ready to copy or export."
     : (scanState ? "Adjust findings and output will update automatically." : "Run a scan to generate safe output.");
   if (refreshScanButton) {
-    refreshScanButton.disabled = !scanState || !inputDirtySinceScan;
+    refreshScanButton.disabled = !scanState || !scanStale;
+  }
+  if (stickyRefreshScanButton) {
+    stickyRefreshScanButton.disabled = !scanState || !scanStale;
   }
 }
 
@@ -386,6 +393,7 @@ async function secureSessionWipe() {
   selectionState = new Set();
   recommendedSelectionState = new Set();
   inputDirtySinceScan = false;
+  configDirtySinceScan = false;
   manualDrawMode = false;
   manualBoxDraft = null;
   selectedManualFindingId = null;
@@ -507,6 +515,15 @@ function selectedIds() {
   return [...selectionState];
 }
 
+function scanIsStale() {
+  return inputDirtySinceScan || configDirtySinceScan;
+}
+
+function staleOutputMessage(action) {
+  const reason = inputDirtySinceScan ? "content" : "scan settings";
+  return `Refresh scan before ${action}. The current output was generated from older ${reason}.`;
+}
+
 function markInputDirty() {
   if (!scanState) return;
   inputDirtySinceScan = true;
@@ -514,6 +531,19 @@ function markInputDirty() {
   refreshActions();
   setStatus(inputStatus, "Content changed. Refresh scan to keep reviewed findings and scan the new data.", "warn");
   setStatus(outputStatus, "Output is stale because the source content changed. Refresh scan before copying or exporting.", "warn");
+}
+
+function markConfigurationDirty(label = "Scan settings") {
+  if (!scanState) return;
+  configDirtySinceScan = true;
+  renderSelectionTrust();
+  refreshActions();
+  setStatus(inputStatus, `${label} changed. Refresh scan to apply the new detection settings.`, "warn");
+  setStatus(outputStatus, "Output is stale because the scan configuration changed. Refresh scan before copying or exporting.", "warn");
+}
+
+async function refreshScanFromStaleState() {
+  await runScan({ preserveReviewedSelection: true });
 }
 
 function findingSelectionKey(finding, { includeOffsets = true } = {}) {
@@ -803,6 +833,7 @@ async function runScan({ preserveReviewedSelection = false } = {}) {
     updateSelectionFromThreshold();
   }
   inputDirtySinceScan = false;
+  configDirtySinceScan = false;
   renderFormatNote(scanState.formatInfo, formatNote);
   await refreshOutputFromSelection();
 
@@ -889,7 +920,15 @@ document.querySelector("#scan-button").addEventListener("click", async () => {
 
 refreshScanButton?.addEventListener("click", async () => {
   try {
-    await runScan({ preserveReviewedSelection: true });
+    await refreshScanFromStaleState();
+  } catch (error) {
+    setStatus(inputStatus, `Refresh scan failed: ${error.message}`, "error");
+  }
+});
+
+stickyRefreshScanButton?.addEventListener("click", async () => {
+  try {
+    await refreshScanFromStaleState();
   } catch (error) {
     setStatus(inputStatus, `Refresh scan failed: ${error.message}`, "error");
   }
@@ -936,8 +975,8 @@ stickySafeCopyButton.addEventListener("click", async () => {
 
 document.querySelector("#copy-button").addEventListener("click", async () => {
   if (!outputState?.text) return;
-  if (inputDirtySinceScan) {
-    setStatus(outputStatus, "Refresh scan before copying. The current output was generated from older content.", "warn");
+  if (scanIsStale()) {
+    setStatus(outputStatus, staleOutputMessage("copying"), "warn");
     return;
   }
   const hasResidualRisk = Boolean(scanState && scanState.findings.length > selectionState.size);
@@ -945,8 +984,8 @@ document.querySelector("#copy-button").addEventListener("click", async () => {
 });
 stickyCopyButton.addEventListener("click", async () => {
   if (!outputState?.text) return;
-  if (inputDirtySinceScan) {
-    setStatus(outputStatus, "Refresh scan before copying. The current output was generated from older content.", "warn");
+  if (scanIsStale()) {
+    setStatus(outputStatus, staleOutputMessage("copying"), "warn");
     return;
   }
   const hasResidualRisk = Boolean(scanState && scanState.findings.length > selectionState.size);
@@ -955,8 +994,8 @@ stickyCopyButton.addEventListener("click", async () => {
 
 document.querySelector("#download-button").addEventListener("click", () => {
   if (!outputState) return;
-  if (inputDirtySinceScan) {
-    setStatus(outputStatus, "Refresh scan before exporting. The current output was generated from older content.", "warn");
+  if (scanIsStale()) {
+    setStatus(outputStatus, staleOutputMessage("exporting"), "warn");
     return;
   }
   const downloadName = outputState.fileName?.startsWith("redacted_") ? outputState.fileName : `redacted_${outputState.fileName || "output.txt"}`;
@@ -980,8 +1019,8 @@ document.querySelector("#download-button").addEventListener("click", () => {
 });
 stickyDownloadButton.addEventListener("click", () => {
   if (!outputState) return;
-  if (inputDirtySinceScan) {
-    setStatus(outputStatus, "Refresh scan before exporting. The current output was generated from older content.", "warn");
+  if (scanIsStale()) {
+    setStatus(outputStatus, staleOutputMessage("exporting"), "warn");
     return;
   }
   document.querySelector("#download-button").click();
@@ -1030,9 +1069,8 @@ document.querySelector("#select-none-button").addEventListener("click", () => {
 
 presetSelect.addEventListener("change", () => {
   applyPreset(presetSelect.value);
-  if (scanState) {
-    runScan().catch((error) => setStatus(inputStatus, `Preset update failed: ${error.message}`, "error"));
-  }
+  if (scanState) updateSelectionFromThreshold();
+  markConfigurationDirty("Workflow preset");
 });
 
 confidenceSelect.addEventListener("change", () => {
@@ -1043,20 +1081,20 @@ modeSelect.addEventListener("change", () => {
   if (scanState) refreshOutputFromSelection().catch((error) => setStatus(outputStatus, `Refresh failed: ${error.message}`, "error"));
 });
 strictEmail.addEventListener("change", () => {
-  if (scanState) runScan().catch((error) => setStatus(inputStatus, `Detector update failed: ${error.message}`, "error"));
+  markConfigurationDirty("Email matching");
 });
 detectNames.addEventListener("change", () => {
-  if (scanState) runScan().catch((error) => setStatus(inputStatus, `Detector update failed: ${error.message}`, "error"));
+  markConfigurationDirty("Identity detection");
 });
 detectFaces.addEventListener("change", () => {
-  if (scanState) runScan().catch((error) => setStatus(inputStatus, `Image update failed: ${error.message}`, "error"));
+  markConfigurationDirty("Face detection");
 });
 imageModeSelect.addEventListener("change", () => {
-  if (scanState) runScan().catch((error) => setStatus(inputStatus, `Image update failed: ${error.message}`, "error"));
+  markConfigurationDirty("Image workflow");
 });
 categoryToggles.forEach((toggle) => {
   toggle.addEventListener("change", () => {
-    if (scanState) runScan().catch((error) => setStatus(inputStatus, `Category update failed: ${error.message}`, "error"));
+    markConfigurationDirty("Detection scope");
   });
 });
 filterSearch.addEventListener("input", renderFindings);

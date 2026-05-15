@@ -788,6 +788,10 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none}
 }
 
 @media (max-width: 720px){
+  body{
+    padding-bottom:256px;
+  }
+
   .shell{
     padding:24px 14px 40px;
   }
@@ -843,8 +847,21 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none}
     flex-direction:column;
   }
 
+  .sticky-copy,
+  .sticky-bar .button-row{
+    width:100%;
+  }
+
+  .sticky-bar .button-row{
+    justify-content:flex-start;
+  }
+
+  .sticky-bar .button-row button{
+    flex:1 1 142px;
+  }
+
   .focus-host{
-    inset:10px 10px 132px;
+    inset:10px 10px 256px;
   }
 
   .focused-panel{
