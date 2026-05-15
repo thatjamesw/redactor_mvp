@@ -4,6 +4,7 @@ import { findingsForDisplay, prepareDocument, redactDocument, scanDocument, scan
 
 const fileInput = document.querySelector("#file-input");
 const textInput = document.querySelector("#text-input");
+const refreshScanButton = document.querySelector("#refresh-scan-button");
 const presetSelect = document.querySelector("#preset-select");
 const modeSelect = document.querySelector("#mode-select");
 const confidenceSelect = document.querySelector("#confidence-select");
@@ -67,6 +68,7 @@ let manualDragState = null;
 let activeFocusKind = "";
 let activeFocusPanel = null;
 let focusPlaceholder = null;
+let inputDirtySinceScan = false;
 
 const presets = {
   llm_safe: {
@@ -176,6 +178,9 @@ function refreshActions() {
   stickySummary.textContent = downloadable
     ? "Current output is ready to copy or export."
     : (scanState ? "Adjust findings and output will update automatically." : "Run a scan to generate safe output.");
+  if (refreshScanButton) {
+    refreshScanButton.disabled = !scanState || !inputDirtySinceScan;
+  }
 }
 
 function syncFocusButtons() {
@@ -374,6 +379,7 @@ async function secureSessionWipe() {
   outputState = null;
   selectionState = new Set();
   recommendedSelectionState = new Set();
+  inputDirtySinceScan = false;
   manualDrawMode = false;
   manualBoxDraft = null;
   selectedManualFindingId = null;
@@ -493,6 +499,50 @@ async function readInputFile(file) {
 
 function selectedIds() {
   return [...selectionState];
+}
+
+function markInputDirty() {
+  if (!scanState) return;
+  inputDirtySinceScan = true;
+  refreshActions();
+  setStatus(inputStatus, "Content changed. Refresh scan to keep reviewed findings and scan the new data.", "warn");
+}
+
+function findingSelectionKey(finding) {
+  const context = finding.context || {};
+  return JSON.stringify({
+    label: finding.label,
+    original: finding.original,
+    start: finding.start,
+    end: finding.end,
+    kind: context.kind,
+    previewPath: context.previewPath,
+    path: context.path,
+    rowIndex: context.rowIndex,
+    columnIndex: context.columnIndex,
+    tableIndex: context.tableIndex,
+    sheetIndex: context.sheetIndex,
+    segmentIndex: context.segmentIndex,
+    pageNumber: context.pageNumber,
+  });
+}
+
+function restoreReviewedSelection(previousScan, previousSelected, previousRecommended) {
+  const nextRecommended = new Set(scanState.findings.filter((item) => item.confidence >= autoSelectThreshold()).map((item) => item.id));
+  const selectedKeys = new Set((previousScan?.findings || [])
+    .filter((finding) => previousSelected.has(finding.id))
+    .map(findingSelectionKey));
+  const skippedKeys = new Set((previousScan?.findings || [])
+    .filter((finding) => previousRecommended.has(finding.id) && !previousSelected.has(finding.id))
+    .map(findingSelectionKey));
+
+  recommendedSelectionState = nextRecommended;
+  selectionState = new Set();
+  for (const finding of scanState.findings) {
+    const key = findingSelectionKey(finding);
+    if (selectedKeys.has(key)) selectionState.add(finding.id);
+    else if (!skippedKeys.has(key) && nextRecommended.has(finding.id)) selectionState.add(finding.id);
+  }
 }
 
 function renderVisualOverlays() {
@@ -701,7 +751,10 @@ async function refreshOutputFromSelection(statusMessage = "") {
   return result;
 }
 
-async function runScan() {
+async function runScan({ preserveReviewedSelection = false } = {}) {
+  const previousScan = preserveReviewedSelection ? scanState : null;
+  const previousSelected = preserveReviewedSelection ? new Set(selectionState) : new Set();
+  const previousRecommended = preserveReviewedSelection ? new Set(recommendedSelectionState) : new Set();
   const documentModel = await currentDocument();
   const options = currentOptions();
   manualDrawMode = false;
@@ -712,7 +765,14 @@ async function runScan() {
     setStatus(inputStatus, "Rendering and scanning PDF pages locally in your browser.", "warn");
   }
   scanState = await scanDocument(documentModel, options);
-  updateSelectionFromThreshold();
+  if (preserveReviewedSelection && previousScan) {
+    restoreReviewedSelection(previousScan, previousSelected, previousRecommended);
+    renderFindings();
+    renderSelectionTrust();
+  } else {
+    updateSelectionFromThreshold();
+  }
+  inputDirtySinceScan = false;
   renderFormatNote(scanState.formatInfo, formatNote);
   await refreshOutputFromSelection();
 
@@ -743,6 +803,7 @@ async function runScan() {
 
   setStatus(inputStatus, scanMessage, scanType);
   setStatus(outputStatus, "Review the findings or copy the current output right away.", "");
+  refreshActions();
 }
 
 function applySelected() {
@@ -790,9 +851,17 @@ function runBenchmark() {
 
 document.querySelector("#scan-button").addEventListener("click", async () => {
   try {
-    await runScan();
+    await runScan({ preserveReviewedSelection: Boolean(scanState) });
   } catch (error) {
     setStatus(inputStatus, `Scan failed: ${error.message}`, "error");
+  }
+});
+
+refreshScanButton?.addEventListener("click", async () => {
+  try {
+    await runScan({ preserveReviewedSelection: true });
+  } catch (error) {
+    setStatus(inputStatus, `Refresh scan failed: ${error.message}`, "error");
   }
 });
 
@@ -806,7 +875,7 @@ document.querySelector("#apply-button").addEventListener("click", async () => {
 
 document.querySelector("#safe-copy-button").addEventListener("click", async () => {
   try {
-    await runScan();
+    await runScan({ preserveReviewedSelection: Boolean(scanState) });
     const result = await refreshOutputFromSelection();
     if (result?.copyable !== false && result?.text) {
       await copyOutput(result.text, "LLM-safe output copied to your clipboard.");
@@ -821,7 +890,7 @@ document.querySelector("#safe-copy-button").addEventListener("click", async () =
 });
 stickySafeCopyButton.addEventListener("click", async () => {
   try {
-    await runScan();
+    await runScan({ preserveReviewedSelection: Boolean(scanState) });
     const result = await refreshOutputFromSelection();
     if (result?.copyable !== false && result?.text) {
       await copyOutput(result.text, "LLM-safe output copied to your clipboard.");
@@ -967,6 +1036,7 @@ fileInput.addEventListener("change", async () => {
     manualBoxDraft = null;
     selectedManualFindingId = null;
     manualDragState = null;
+    markInputDirty();
     fileSummary.textContent = `${fileState.name} loaded locally (${Math.round(fileState.size / 1024) || 1} KB). Pasted text is ignored while a file is selected.`;
     renderFormatNote(lightweightFormatInfo(fileState, fileState.name), formatNote);
     setStatus(inputStatus, "File loaded locally. Click LLM-safe copy for the fastest workflow.", "success");
@@ -989,6 +1059,7 @@ document.addEventListener("paste", async (event) => {
     manualBoxDraft = null;
     selectedManualFindingId = null;
     manualDragState = null;
+    markInputDirty();
     fileSummary.textContent = `${fileState.name} pasted from clipboard. OCR will run locally in the browser.`;
     renderFormatNote(lightweightFormatInfo(fileState, fileState.name), formatNote);
     setStatus(inputStatus, "Image pasted from clipboard. Click scan or LLM-safe copy to process it.", "success");
@@ -999,6 +1070,7 @@ document.addEventListener("paste", async (event) => {
 
 textInput.addEventListener("input", () => {
   if (fileState) return;
+  markInputDirty();
   currentDocument().then((documentModel) => {
     renderFormatNote(documentModel.formatInfo, formatNote);
   }).catch(() => {

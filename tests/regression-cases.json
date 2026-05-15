@@ -1,5 +1,18 @@
 [
   {
+    "name": "standalone proper name list is high-confidence redacted",
+    "threshold": "high",
+    "input": "James Wright\nJames Wright\nJames Smith\n",
+    "expectPresent": [
+      "[REDACTED]\n[REDACTED]\n[REDACTED]\n"
+    ],
+    "expectAbsent": [
+      "James Wright",
+      "James Smith"
+    ],
+    "minFindings": 3
+  },
+  {
     "name": "full international email is redacted in CSV",
     "fileName": "contacts.csv",
     "threshold": "medium",

@@ -1,4 +1,4 @@
-import { replacementFor } from "../replacements.js";
+import { collapseOverlappingReplacements, replacementFor } from "../replacements.js";
 import { scanValueCollectionWithIdentitySeeds } from "../scan-helpers.js";
 import { annotateFindings, descendingReplacementOrder, summarise } from "../utils.js";
 
@@ -158,7 +158,7 @@ export async function redactXlsxDocument(scanResult, selectedIds, mode) {
     const worksheet = workbook.worksheets[sheetIndex];
     const cell = worksheet.getRow(rowIndex + 2).getCell(columnIndex + 1);
     let output = cellDisplayValue(cell);
-    for (const finding of [...matches].sort(descendingReplacementOrder)) {
+    for (const finding of collapseOverlappingReplacements(matches, output, mode).sort(descendingReplacementOrder)) {
       const original = output.slice(finding.start, finding.end);
       const replacement = replacementFor(finding.label, original, mode, cache);
       output = `${output.slice(0, finding.start)}${replacement}${output.slice(finding.end)}`;

@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ExcelJS from "exceljs";
 
-import { prepareDocument, redactDocument, scanDocument } from "../static/redactor-core.js";
+import { applyTextReplacements, prepareDocument, redactDocument, scanDocument } from "../static/redactor-core.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -132,12 +132,25 @@ async function runGeneratedCases() {
   return results;
 }
 
+function runReplacementCases() {
+  const overlapOutput = applyTextReplacements("name: James Wright", [
+    { id: "short", label: "PERSON", confidence: 0.63, start: 6, end: 11, original: "James", reasoning: [] },
+    { id: "long", label: "PERSON", confidence: 0.84, start: 6, end: 18, original: "James Wright", reasoning: [] },
+  ], new Set(["short", "long"]), "redact");
+
+  return [{
+    name: "overlapping findings collapse before redaction",
+    failures: overlapOutput === "name: [REDACTED]" ? [] : [`expected collapsed redaction, got: ${overlapOutput}`],
+  }];
+}
+
 const results = [];
 for (const testCase of cases) {
   // eslint-disable-next-line no-await-in-loop
   results.push(await runCase(testCase));
 }
 results.push(...(await runGeneratedCases()));
+results.push(...runReplacementCases());
 
 const failed = results.filter((result) => result.failures.length > 0);
 for (const result of results) {

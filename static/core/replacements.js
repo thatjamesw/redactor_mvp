@@ -22,7 +22,11 @@ export function replacementFor(label, original, mode, cache) {
 }
 
 export function applyTextReplacements(text, findings, selectedIds, mode) {
-  const selected = findings.filter((item) => selectedIds.has(item.id)).sort(descendingReplacementOrder);
+  const selected = collapseOverlappingReplacements(
+    findings.filter((item) => selectedIds.has(item.id)),
+    text,
+    mode
+  ).sort(descendingReplacementOrder);
   let output = text;
   const cache = new Map();
   for (const item of selected) {
@@ -31,4 +35,32 @@ export function applyTextReplacements(text, findings, selectedIds, mode) {
     output = `${output.slice(0, item.start)}${replacement}${output.slice(item.end)}`;
   }
   return output;
+}
+
+export function collapseOverlappingReplacements(findings, text = "", mode = "redact") {
+  const ordered = findings
+    .filter((item) => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start)
+    .slice()
+    .sort((left, right) => left.start - right.start || left.end - right.end || (right.confidence || 0) - (left.confidence || 0));
+  const collapsed = [];
+
+  for (const finding of ordered) {
+    const current = collapsed[collapsed.length - 1];
+    if (!current || finding.start >= current.end) {
+      collapsed.push({ ...finding });
+      continue;
+    }
+
+    const best = (finding.confidence || 0) > (current.confidence || 0) ? finding : current;
+    current.start = Math.min(current.start, finding.start);
+    current.end = Math.max(current.end, finding.end);
+    current.label = best.label;
+    current.confidence = Math.max(current.confidence || 0, finding.confidence || 0);
+    current.reasoning = [...new Set([...(current.reasoning || []), ...(finding.reasoning || []), "overlap_collapsed"])];
+    current.original = text.slice(current.start, current.end) || current.original;
+
+    if (mode === "redact") current.label = "REDACTED";
+  }
+
+  return collapsed;
 }

@@ -1,4 +1,4 @@
-import { replacementFor } from "../replacements.js";
+import { collapseOverlappingReplacements, replacementFor } from "../replacements.js";
 import { scanValueCollectionWithIdentitySeeds } from "../scan-helpers.js";
 import { annotateFindings, descendingReplacementOrder, detectLineEnding, summarise, withTrailingNewline } from "../utils.js";
 
@@ -127,7 +127,7 @@ export function redactYamlDocument(scanResult, selectedIds, mode) {
   for (const [key, matches] of grouped.entries()) {
     const segment = scanResult.document.segments[Number(key)];
     let output = lines[segment.lineIndex].slice(segment.start, segment.end);
-    for (const finding of [...matches].sort(descendingReplacementOrder)) {
+    for (const finding of collapseOverlappingReplacements(matches, output, mode).sort(descendingReplacementOrder)) {
       const original = output.slice(finding.start, finding.end);
       const replacement = replacementFor(finding.label, original, mode, cache);
       output = `${output.slice(0, finding.start)}${replacement}${output.slice(finding.end)}`;

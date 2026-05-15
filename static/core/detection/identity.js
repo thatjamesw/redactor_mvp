@@ -88,6 +88,7 @@ function addContactLineIdentityFindings(content, findings, context) {
 function addStandaloneNameLineFindings(content, findings, context) {
   const lines = content.split(/\r?\n/);
   let offset = 0;
+  const candidates = [];
   for (const line of lines) {
     const lineStart = offset;
     offset += line.length + 1;
@@ -102,7 +103,16 @@ function addStandaloneNameLineFindings(content, findings, context) {
 
     const startOffset = line.indexOf(trimmed);
     const start = lineStart + Math.max(0, startOffset);
-    addFinding(findings, "PERSON", 0.63, start, start + trimmed.length, trimmed, ["standalone_name_line"], context);
+    candidates.push({ start, end: start + trimmed.length, original: trimmed });
+  }
+
+  const nameListConfidence = candidates.length >= 2 ? 0.84 : 0.63;
+  for (const candidate of candidates) {
+    const properCased = candidate.original
+      .split(/\s+/)
+      .every((token) => /^[\p{Lu}][\p{Ll}\p{M}.'\u2019-]+$/u.test(token));
+    const confidence = Math.max(nameListConfidence, properCased ? 0.82 : 0.63);
+    addFinding(findings, "PERSON", confidence, candidate.start, candidate.end, candidate.original, ["standalone_name_line"], context);
   }
 }
 
